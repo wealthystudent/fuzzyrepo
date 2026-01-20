@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"net/http"
 	"os/exec"
+	"strings"
 
 	"github.com/google/go-github/github"
 	"golang.org/x/oauth2"
@@ -13,53 +16,65 @@ import (
 // Used as a placeholder for when error handeling is not implemented yet.
 var ErrNotImplemented = errors.New("not implemented yet")
 
-// Used to store a list of the repositories ()
-var repos *[]string
-
 // Defines a DTO for a single repo (used to hold information about each repo)
 type RepoDTO struct {
 	name         string
+	url          string
 	exists_local bool
 }
 
-func getOauth2Client(token string) (*oauth2.Client, error) {
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	return oauth2.NewClient(context.Background(), ts), nil
-}
+// Cache for the repositories. Collection of RepoDTO pointers.
+var repoCache []*RepoDTO
 
 func getAuthToken() (string, error) {
+	// Uses the gh CLI to get the authentication token
 	cmd := exec.Command("gh", "auth", "token")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
-	return string(output), nil
+	return strings.TrimSpace(string(output)), nil
 }
 
-func getGithubClient(client *oauth2.Client) *github.Client {
+func getOauth2Client(ctx context.Context, token string) (*http.Client, error) {
+	// Creates an OAuth2 client using the provided token
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	return oauth2.NewClient(ctx, ts), nil
+}
+
+func getGithubClient(client *http.Client) *github.Client {
+	// Creates a GitHub client using the provided HTTP client
 	return github.NewClient(client)
 }
 
-// TODO: Function for retrieving a list of all repositories at the remote location
-func listRemoteRepositories() error {
-	searchResults := make([]string, 0)
-	// TODO: Add code for retrieving the repos and append the names to searchResults
+func getRemoteRepositories(ctx context.Context, githubClient *github.Client) error {
+	// Fetches remote repositories and populates the repoCache
 
-	repos = &searchResults
-	return ErrNotImplemented
-}
-
-func listRemoteOrganizations() error {
-	return ErrNotImplemented
-}
-
-func listPublicRepositories() error {
-	return ErrNotImplemented
+	opts := &github.RepositoryListOptions{
+		Visibility:  "all",                                    // Can be "public", "private", or "all"
+		Affiliation: "owner,collaborator,organization_member", // Include repos from all affiliations
+		ListOptions: github.ListOptions{PerPage: 100},         // Fetch maximum items per page
+	}
+	remote_repos, _, err := githubClient.Repositories.List(ctx, "", opts)
+	if err != nil {
+		return err
+	}
+	for _, repo := range remote_repos {
+		dto := &RepoDTO{
+			name:         repo.GetName(),
+			url:          repo.GetURL(),
+			exists_local: false,
+		} // Initialize RepoDTO, as value
+		fmt.Println("Repo Name: ", dto.name)
+		repoCache = append(repoCache, dto) // Append the DTO pointer to the repoCache
+	}
+	return nil
 }
 
 func main() {
+	ctx := context.Background()
 	token, err := getAuthToken()
 
 	if err != nil {
@@ -67,7 +82,7 @@ func main() {
 		panic(err)
 	}
 
-	client, err = getOauth2Client(token)
+	client, err := getOauth2Client(ctx, token)
 
 	if err != nil {
 		log.Fatal("Failed to create OAuth2 client: ", err)
@@ -75,5 +90,29 @@ func main() {
 	}
 
 	githubClient := getGithubClient(client)
+
+	err = getRemoteRepositories(ctx, githubClient)
+	if err != nil {
+		log.Fatal("Failed to get remote repositories: ", err)
+		panic(err)
+	}
+
+	for i, r := range repoCache {
+		// r is a *RepoDTO (a pointer)
+		// Go automatically handles the pointer so you can just use the dot (.)
+		fmt.Printf("%d. Name: %s | URL: %s | Local: %v\n", i+1, r.name, r.url, r.exists_local)
+	}
+
+	// printRemoteRepositories(ctx, githubClient)
+
+	/* 	fmt.Println("Organizations:")
+	   	for _, o := range org {
+	   		fmt.Println("- %s\n", *o.Login)
+	   	} */
+
+	/* repos, _, err := githubClient.Repositories.List(ctx, "", nil)
+	   if err != nil {
+	       log.Fatal(err)
+	   } */
 
 }
