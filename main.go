@@ -64,10 +64,9 @@ func getRemoteRepositories(ctx context.Context, githubClient *github.Client) err
 	for _, repo := range remote_repos {
 		dto := &RepoDTO{
 			name:         repo.GetName(),
-			url:          repo.GetURL(),
+			url:          repo.GetSSHURL(),
 			exists_local: false,
 		} // Initialize RepoDTO, as value
-		fmt.Println("Repo Name: ", dto.name)
 		repoCache = append(repoCache, dto) // Append the DTO pointer to the repoCache
 	}
 	return nil
