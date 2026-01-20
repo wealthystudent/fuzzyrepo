@@ -10,16 +10,6 @@ import (
 	"strings"
 )
 
-func getHomeDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Println("Could not find home directory:", err)
-		return ""
-	}
-	fmt.Println("Your home directory is:", home)
-	return home
-}
-
 // Helper function to handle the file scanning
 func extractURLFromConfig(configPath string) (string, error) {
 	file, err := os.Open(configPath)

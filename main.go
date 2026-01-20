@@ -37,6 +37,13 @@ func main() {
 		panic(err)
 	}
 
+	// Read config
+	conf, err := LoadConfig()
+	if err != nil {
+		log.Fatal("Failed to read config file. Make sure to setup the ~/.fuzzyrepo.conf file: ", err)
+		panic(err)
+	}
+
 	// Get repositories
 	err = getRemoteRepositories(ctx, githubClient)
 	if err != nil {
@@ -44,14 +51,8 @@ func main() {
 		panic(err)
 	}
 
-	/* 	// Loop through repositories and print
-	   	for i, r := range repoCache {
-	   		// r is a *RepoDTO (a pointer)
-	   		// Go automatically handles the pointer so you can just use the dot (.)
-	   		fmt.Printf("%d. Name: %s | URL: %s | Local: %v\n", i+1, r.name, r.url, r.exists_local)
-	   	} */
-
-	err_local_repo := getClonedRepos("/Users/REDACTED/Documents/work")
+	// Get local repositories (look for .git fuyzzyfind)
+	err_local_repo := getClonedRepos(conf.LocalRepoPath)
 	if err_local_repo != nil {
 		log.Fatal("Failed to retrive local repositories: ", err)
 		panic(err)
