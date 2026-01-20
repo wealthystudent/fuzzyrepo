@@ -24,25 +24,29 @@ var repoCache []*RepoDTO
 func main() {
 	ctx := context.Background()
 
+	// Create GH Client
 	githubClient, err := getGithubClient(ctx)
 	if err != nil {
 		log.Fatal("Failed to create github client: ", err)
 		panic(err)
 	}
 
+	// Get repositories
 	err = getRemoteRepositories(ctx, githubClient)
 	if err != nil {
 		log.Fatal("Failed to get remote repositories: ", err)
 		panic(err)
 	}
 
+	// Loop through repositories and print
 	for i, r := range repoCache {
 		// r is a *RepoDTO (a pointer)
 		// Go automatically handles the pointer so you can just use the dot (.)
 		fmt.Printf("%d. Name: %s | URL: %s | Local: %v\n", i+1, r.name, r.url, r.exists_local)
 	}
 
-	// Parse CLI (NOTE: RunCLI returns "int" os values)
+	// Parse CLI: Entry point for the CLI tool
+	// (NOTE: RunCLI returns "int" os values)
 	os.Exit(RunCLI(os.Args[1:]))
 
 }
