@@ -24,3 +24,9 @@ func listRemoteRepositories() error {
 	repos = &searchResults
 	return ErrNotImplemented
 }
+
+func main() {
+	// Set repos using mock variable untill listRemoteRepositories is implemented
+	repos = &mock_repos
+
+}
