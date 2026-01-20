@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 )
 
 // Used as a placeholder for when error handeling is not implemented yet.
@@ -29,4 +30,6 @@ func main() {
 	// Set repos using mock variable untill listRemoteRepositories is implemented
 	repos = &mock_repos
 
+	// Parse CLI (NOTE: RunCLI returns "int" os values)
+	os.Exit(RunCLI(os.Args[1:]))
 }
