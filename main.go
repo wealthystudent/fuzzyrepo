@@ -103,16 +103,4 @@ func main() {
 		fmt.Printf("%d. Name: %s | URL: %s | Local: %v\n", i+1, r.name, r.url, r.exists_local)
 	}
 
-	// printRemoteRepositories(ctx, githubClient)
-
-	/* 	fmt.Println("Organizations:")
-	   	for _, o := range org {
-	   		fmt.Println("- %s\n", *o.Login)
-	   	} */
-
-	/* repos, _, err := githubClient.Repositories.List(ctx, "", nil)
-	   if err != nil {
-	       log.Fatal(err)
-	   } */
-
 }
