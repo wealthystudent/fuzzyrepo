@@ -18,8 +18,14 @@ type RepoDTO struct {
 	exists_local bool
 }
 
+type LocalRepoDTO struct {
+	url        string
+	folderPath string
+}
+
 // Cache for the repositories. Collection of RepoDTO pointers.
 var repoCache []*RepoDTO
+var localRepoCache []*LocalRepoDTO
 
 func main() {
 	ctx := context.Background()
@@ -38,11 +44,24 @@ func main() {
 		panic(err)
 	}
 
-	// Loop through repositories and print
-	for i, r := range repoCache {
+	/* 	// Loop through repositories and print
+	   	for i, r := range repoCache {
+	   		// r is a *RepoDTO (a pointer)
+	   		// Go automatically handles the pointer so you can just use the dot (.)
+	   		fmt.Printf("%d. Name: %s | URL: %s | Local: %v\n", i+1, r.name, r.url, r.exists_local)
+	   	} */
+
+	err_local_repo := getClonedRepos("/Users/REDACTED/Documents/work")
+	if err_local_repo != nil {
+		log.Fatal("Failed to retrive local repositories: ", err)
+		panic(err)
+	}
+
+	fmt.Println("Local Repos Found")
+	for i, r := range localRepoCache {
 		// r is a *RepoDTO (a pointer)
 		// Go automatically handles the pointer so you can just use the dot (.)
-		fmt.Printf("%d. Name: %s | URL: %s | Local: %v\n", i+1, r.name, r.url, r.exists_local)
+		fmt.Printf("%d. url: %s | folder_path: %s \n", i+1, r.url, r.folderPath)
 	}
 
 	// Parse CLI: Entry point for the CLI tool

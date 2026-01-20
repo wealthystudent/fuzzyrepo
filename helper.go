@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -88,4 +89,9 @@ func (c *ConfigCmd) setConfig() error {
 
 	fmt.Println("Wrote config:", cfgPath)
 	return nil
+}
+
+func getOs() string {
+	// get runtime OS
+	return runtime.GOOS
 }

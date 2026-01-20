@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
@@ -55,17 +56,29 @@ func getRemoteRepositories(ctx context.Context, githubClient *github.Client) err
 		Affiliation: "owner,collaborator,organization_member", // Include repos from all affiliations
 		ListOptions: github.ListOptions{PerPage: 100},         // Fetch maximum items per page
 	}
-	remote_repos, _, err := githubClient.Repositories.List(ctx, "", opts)
-	if err != nil {
-		return err
+
+	for {
+		remote_repos, resp, err := githubClient.Repositories.List(ctx, "", opts)
+		if err != nil {
+			return err
+		}
+		for _, repo := range remote_repos {
+			dto := &RepoDTO{
+				name:         repo.GetName(),
+				url:          repo.GetSSHURL(),
+				exists_local: false,
+			} // Initialize RepoDTO, as value
+			repoCache = append(repoCache, dto) // Append the DTO pointer to the repoCache
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		fmt.Printf("Successfully loaded %d repos, page %d\n", len(repoCache), opts.Page)
+		opts.Page = resp.NextPage
+		if opts.Page == 4 {
+			break
+		}
 	}
-	for _, repo := range remote_repos {
-		dto := &RepoDTO{
-			name:         repo.GetName(),
-			url:          repo.GetSSHURL(),
-			exists_local: false,
-		} // Initialize RepoDTO, as value
-		repoCache = append(repoCache, dto) // Append the DTO pointer to the repoCache
-	}
+
 	return nil
 }
