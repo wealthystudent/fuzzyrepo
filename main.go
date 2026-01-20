@@ -1,27 +1,26 @@
 package main
 
-var tempCLI struct {
-	Rm struct {
-		Force     bool `help:"Force removal."`
-		Recursive bool `help:"Recursively remove files."`
+import (
+	"errors"
+)
 
-		Paths []string `arg:"" name:"path" help:"Paths to remove." type:"path"`
-	} `cmd:"" help:"Remove files."`
+// Used as a placeholder for when error handeling is not implemented yet.
+var ErrNotImplemented = errors.New("not implemented yet")
 
-	Ls struct {
-		Paths []string `arg:"" optional:"" name:"path" help:"Paths to list." type:"path"`
-	} `cmd:"" help:"List paths."`
+// Used to store a list of the repositories ()
+var repos *[]string
+
+// Defines a DTO for a single repo (used to hold information about each repo)
+type RepoDTO struct {
+	name         string
+	exists_local bool
 }
 
-// func main() {
-// 	ctx := kong.Parse(&tempCLI)
-// 	switch ctx.Command() {
-// 	case "rm <path>":
-// 	case "ls":
-// 	default:
-// 		panic(ctx.Command())
-// 	}
-// }
+// TODO: Function for retrieving a list of all repositories at the remote location
+func listRemoteRepositories() error {
+	searchResults := make([]string, 0)
+	// TODO: Add code for retrieving the repos and append the names to searchResults
 
-var CLI struct {
+	repos = &searchResults
+	return ErrNotImplemented
 }
