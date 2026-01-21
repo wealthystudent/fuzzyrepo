@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -61,4 +63,22 @@ func updateRepoJSON(config *Config) error {
 
 	return nil
 
+}
+
+// TODO: Make sure that the folder and file exists before reading it
+func loadRepoJSONIntoCache() error {
+	path := filepath.Join(getHomeDir(), ".local", "share", "fuzzyrepo", "repos.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	var repos []*RepoDTO
+	if err := json.Unmarshal(data, &repos); err != nil {
+		return err
+	}
+
+	repoCache = repos
+	return nil
 }

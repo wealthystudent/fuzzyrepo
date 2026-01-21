@@ -8,7 +8,9 @@ import (
 )
 
 // Toggle until your JSON updater/loader is implemented.
-const USE_MOCKS = true
+const (
+	USE_MOCKS = false
+)
 
 // Cache for the repositories. Collection of RepoDTO pointers.
 // (Keeping your shape so you can later populate it from JSON.)
@@ -39,12 +41,17 @@ func main() {
 		// _ = updateRepoJSON(conf.LocalRepoPath)
 		time.Sleep(8 * time.Second)
 
-		// Future: after JSON update completes, re-read JSON:
-		// _ = loadRepoJSONIntoCache()
-		// updated := repoPtrsToValues(repoCache)
+		var updated []RepoDTO
+		if USE_MOCKS {
+			updated = append(mockRepos(), mockReposMore()...)
+		} else {
+			if err := loadRepoJSONIntoCache(); err != nil {
+				log.Println("Warning: could not load repo cache JSON:", err)
+				repoCache = nil
+			}
+			updated = repoPtrsToValues(repoCache)
+		}
 
-		// For now: just demonstrate live UI update with mocks
-		updated := append(mockRepos(), mockReposMore()...)
 		uiMsgs <- reposUpdatedMsg(updated)
 
 		uiMsgs <- refreshFinishedMsg{}
@@ -63,16 +70,6 @@ func repoPtrsToValues(in []*RepoDTO) []RepoDTO {
 		out = append(out, *p) // copy value into UI slice (avoids sharing/mutation issues)
 	}
 	return out
-}
-
-// Stub until you implement JSON reading.
-// This should populate repoCache = []*RepoDTO{...}.
-func loadRepoJSONIntoCache() error {
-	// TODO:
-	// repos, err := readRepoJSONFromDisk()
-	// if err != nil { return err }
-	// repoCache = repos
-	return nil
 }
 
 // ---- Mock data helpers ----
