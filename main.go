@@ -2,30 +2,14 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 )
 
-// Used as a placeholder for when error handeling is not implemented yet.
-var ErrNotImplemented = errors.New("not implemented yet")
-
-// Defines a DTO for a single repo (used to hold information about each repo)
-type RepoDTO struct {
-	name         string
-	url          string
-	exists_local bool
-}
-
-type LocalRepoDTO struct {
-	url        string
-	folderPath string
-}
-
 // Cache for the repositories. Collection of RepoDTO pointers.
 var repoCache []*RepoDTO
-var localRepoCache []*LocalRepoDTO
+var localRepoCache []*RepoDTO
 
 func main() {
 	ctx := context.Background()
@@ -62,7 +46,7 @@ func main() {
 	for i, r := range localRepoCache {
 		// r is a *RepoDTO (a pointer)
 		// Go automatically handles the pointer so you can just use the dot (.)
-		fmt.Printf("%d. url: %s | folder_path: %s \n", i+1, r.url, r.folderPath)
+		fmt.Printf("%d. folder_path: %s \n", i+1, r.url)
 	}
 
 	// Parse CLI: Entry point for the CLI tool

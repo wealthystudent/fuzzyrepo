@@ -10,6 +10,13 @@ import (
 	"strings"
 )
 
+// Defines a DTO for a single repo (used to hold information about each repo)
+type RepoDTO struct {
+	name         string
+	url          string // This is SSHUrl for remote and localPath for local repos
+	exists_local bool
+}
+
 // Helper function to handle the file scanning
 func extractURLFromConfig(configPath string) (string, error) {
 	file, err := os.Open(configPath)
@@ -42,9 +49,10 @@ func createLocalRepoCache(localRepos []string) error {
 			continue
 		}
 
-		dto := &LocalRepoDTO{
-			url:        url,
-			folderPath: folderPath,
+		dto := &RepoDTO{
+			name:         url,
+			url:          url,
+			exists_local: true,
 		}
 		localRepoCache = append(localRepoCache, dto) // Append the DTO pointer to the repoCache
 
