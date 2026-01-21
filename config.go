@@ -44,7 +44,7 @@ func GetConfigPath() (string, error) {
 func DefaultConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".fuzzyrepo.json" // fallback
+		return ".fuzzyrepo.conf" // fallback
 	}
-	return filepath.Join(home, ".fuzzyrepo.json")
+	return filepath.Join(home, ".fuzzyrepo.conf")
 }

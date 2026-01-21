@@ -10,11 +10,12 @@ import (
 	"strings"
 )
 
-// Defines a DTO for a single repo (used to hold information about each repo)
+// RepoDTO: Path is ssh URL if remote-only, filepath if local (per your spec).
+// Exported fields so JSON caching is trivial (least complexity).
 type RepoDTO struct {
-	name         string
-	url          string // This is SSHUrl for remote and localPath for local repos
-	exists_local bool
+	Name        string `json:"name"`
+	Path        string `json:"path"` // ssh url for remote, filepath for local
+	ExistsLocal bool   `json:"exists_local"`
 }
 
 // Helper function to handle the file scanning
@@ -50,12 +51,11 @@ func createLocalRepoCache(localRepos []string) error {
 		}
 
 		dto := &RepoDTO{
-			name:         url,
-			url:          url,
-			exists_local: true,
+			Name:        url,
+			Path:        url,
+			ExistsLocal: true,
 		}
-		localRepoCache = append(localRepoCache, dto) // Append the DTO pointer to the repoCache
-
+		fmt.Print(dto.Name)
 		// Initialize RepoDTO, as value
 
 	}

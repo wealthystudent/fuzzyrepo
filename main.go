@@ -1,56 +1,94 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"log"
-	"os"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
+// Toggle until your JSON updater/loader is implemented.
+const USE_MOCKS = true
+
 // Cache for the repositories. Collection of RepoDTO pointers.
+// (Keeping your shape so you can later populate it from JSON.)
 var repoCache []*RepoDTO
-var localRepoCache []*RepoDTO
 
 func main() {
-	ctx := context.Background()
+	uiMsgs := make(chan tea.Msg, 10)
 
-	// Create GH Client
-	githubClient, err := getGithubClient(ctx)
-	if err != nil {
-		log.Fatal("Failed to create github client: ", err)
-		panic(err)
+	// ---- Initial list (fast) ----
+	var initial []RepoDTO
+
+	if USE_MOCKS {
+		initial = mockRepos()
+	} else {
+		// Future: load from JSON into repoCache
+		if err := loadRepoJSONIntoCache(); err != nil {
+			log.Println("Warning: could not load repo cache JSON:", err)
+			repoCache = nil
+		}
+		initial = repoPtrsToValues(repoCache)
 	}
 
-	// Read config
-	conf, err := LoadConfig()
-	if err != nil {
-		log.Fatal("Failed to read config file. Make sure to setup the ~/.fuzzyrepo.conf file: ", err)
-		panic(err)
+	// ---- Background refresh simulation ----
+	go func() {
+		uiMsgs <- refreshStartedMsg{}
+
+		// Future: this is where you'd run your slow updater that writes JSON:
+		// _ = updateRepoJSON(conf.LocalRepoPath)
+		time.Sleep(8 * time.Second)
+
+		// Future: after JSON update completes, re-read JSON:
+		// _ = loadRepoJSONIntoCache()
+		// updated := repoPtrsToValues(repoCache)
+
+		// For now: just demonstrate live UI update with mocks
+		updated := append(mockRepos(), mockReposMore()...)
+		uiMsgs <- reposUpdatedMsg(updated)
+
+		uiMsgs <- refreshFinishedMsg{}
+	}()
+
+	// ---- Start UI ----
+	ui(initial, uiMsgs)
+}
+
+func repoPtrsToValues(in []*RepoDTO) []RepoDTO {
+	out := make([]RepoDTO, 0, len(in))
+	for _, p := range in {
+		if p == nil {
+			continue
+		}
+		out = append(out, *p) // copy value into UI slice (avoids sharing/mutation issues)
 	}
+	return out
+}
 
-	// Get repositories
-	err = getRemoteRepositories(ctx, githubClient)
-	if err != nil {
-		log.Fatal("Failed to get remote repositories: ", err)
-		panic(err)
+// Stub until you implement JSON reading.
+// This should populate repoCache = []*RepoDTO{...}.
+func loadRepoJSONIntoCache() error {
+	// TODO:
+	// repos, err := readRepoJSONFromDisk()
+	// if err != nil { return err }
+	// repoCache = repos
+	return nil
+}
+
+// ---- Mock data helpers ----
+
+func mockRepos() []RepoDTO {
+	return []RepoDTO{
+		{Name: "my-local-repo", ExistsLocal: true, Path: "/Users/REDACTED/code/my-local-repo"},
+		{Name: "my-remote-repo", ExistsLocal: false, Path: "git@github.com:wealthystudent/my-remote-repo.git"},
+		{Name: "org-service-api", ExistsLocal: false, Path: "git@github.com:myorg/service-api.git"},
+		{Name: "org-service-api (local)", ExistsLocal: true, Path: "/Users/REDACTED/code/service-api"},
 	}
+}
 
-	// Get local repositories (look for .git fuyzzyfind)
-	err_local_repo := getClonedRepos(conf.LocalRepoPath)
-	if err_local_repo != nil {
-		log.Fatal("Failed to retrive local repositories: ", err)
-		panic(err)
+func mockReposMore() []RepoDTO {
+	return []RepoDTO{
+		{Name: "testingrepo", ExistsLocal: false, Path: "git@github.com:wealthystudent/testingrepo.git"},
+		{Name: "testingrepo2", ExistsLocal: false, Path: "git@github.com:wealthystudent/testingrepo2.git"},
 	}
-
-	fmt.Println("Local Repos Found")
-	for i, r := range localRepoCache {
-		// r is a *RepoDTO (a pointer)
-		// Go automatically handles the pointer so you can just use the dot (.)
-		fmt.Printf("%d. folder_path: %s \n", i+1, r.url)
-	}
-
-	// Parse CLI: Entry point for the CLI tool
-	// (NOTE: RunCLI returns "int" os values)
-	os.Exit(RunCLI(os.Args[1:]))
-
 }
