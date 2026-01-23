@@ -112,8 +112,8 @@ vim.keymap.set("n", "<leader>fr", "<cmd>Fuzzyrepo<cr>", { desc = "fuzzyrepo" })
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `width` | number | `0.8` | Float width as a fraction of `vim.o.columns` |
-| `height` | number | `0.8` | Float height as a fraction of `vim.o.lines` |
+| `width` | number | `0.5` | Float width as a fraction of `vim.o.columns` |
+| `height` | number | `0.4` | Float height as a fraction of `vim.o.lines` |
 | `border` | string | `"rounded"` | Floating window border style |
 | `cmd` | string | `"fuzzyrepo"` | Command to run |
 
