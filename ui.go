@@ -30,6 +30,14 @@ type reposUpdatedMsg []Repository
 type refreshStartedMsg struct{}
 type refreshFinishedMsg struct{}
 
+type Action int
+
+const (
+	ActionNone Action = iota
+	ActionOpen
+	ActionCopy
+)
+
 type Model struct {
 	all     []Repository
 	query   string
@@ -42,15 +50,20 @@ type Model struct {
 
 	width  int
 	height int
+
+	config         Config
+	selectedRepo   *Repository
+	selectedAction Action
 }
 
-func newModel(all []Repository) Model {
+func newModel(all []Repository, config Config) Model {
 	m := Model{
-		all:   all,
-		query: "",
+		all:    all,
+		query:  "",
+		config: config,
 	}
 	m.applySearch()
-	m.status = "Type to search · ↑/↓ navigate · Enter open · y copy · q quit"
+	m.status = "Type to search · ↑/↓ navigate · Enter open · y copy · r refresh · q quit"
 	return m
 }
 
@@ -106,8 +119,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			r := m.results[m.cursor]
-			m.status = "Opening: " + r.FullName
-			return m, nil
+			m.selectedRepo = &r
+			m.selectedAction = ActionOpen
+			return m, tea.Quit
 
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
@@ -122,6 +136,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch key {
 				case "q":
 					return m, tea.Quit
+				case "y":
+					if len(m.results) > 0 {
+						r := m.results[m.cursor]
+						m.selectedRepo = &r
+						m.selectedAction = ActionCopy
+						return m, tea.Quit
+					}
 				default:
 					m.query += key
 					m.applySearch()
@@ -227,8 +248,9 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func ui(initial []Repository, uiMsgs <-chan tea.Msg) {
-	p := tea.NewProgram(newModel(initial), tea.WithAltScreen())
+func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg) (*Repository, Action) {
+	model := newModel(initial, config)
+	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	go func() {
 		for msg := range uiMsgs {
@@ -236,8 +258,12 @@ func ui(initial []Repository, uiMsgs <-chan tea.Msg) {
 		}
 	}()
 
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+
+	m := finalModel.(Model)
+	return m.selectedRepo, m.selectedAction
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"os"
 
@@ -38,5 +40,40 @@ func main() {
 		uiMsgs <- refreshFinishedMsg{}
 	}()
 
-	ui(initial, uiMsgs)
+	selectedRepo, action := ui(initial, config, uiMsgs)
+	executeAction(selectedRepo, action, config)
+}
+
+func executeAction(repo *Repository, action Action, config Config) {
+	if repo == nil || action == ActionNone {
+		return
+	}
+
+	switch action {
+	case ActionOpen:
+		localPath, err := EnsureLocal(*repo, config)
+		if err != nil && !errors.Is(err, ErrAlreadyExists) {
+			fmt.Fprintln(os.Stderr, "Clone failed:", err)
+			os.Exit(1)
+		}
+
+		if err := OpenInEditor(localPath); err != nil {
+			if errors.Is(err, ErrNoEditor) {
+				fmt.Fprintln(os.Stderr, "Error: $EDITOR is not set")
+				os.Exit(1)
+			}
+			fmt.Fprintln(os.Stderr, "Failed to open editor:", err)
+			os.Exit(1)
+		}
+
+	case ActionCopy:
+		localPath, err := EnsureLocal(*repo, config)
+		if err != nil && !errors.Is(err, ErrAlreadyExists) {
+			fmt.Fprintln(os.Stderr, "Clone failed:", err)
+			os.Exit(1)
+		}
+
+		CopyToClipboard(localPath)
+		fmt.Println("Copied to clipboard:", localPath)
+	}
 }
