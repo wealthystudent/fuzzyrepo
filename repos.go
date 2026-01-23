@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -67,4 +69,58 @@ func parseGitHubURL(url string) (owner, name string, ok bool) {
 		return matches[1], strings.TrimSuffix(matches[2], ".git"), true
 	}
 	return "", "", false
+}
+
+func indexLocalRepos(roots []string) []Repository {
+	var repos []Repository
+
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+
+		filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+
+			if d.IsDir() && d.Name() == ".git" {
+				repoPath := filepath.Dir(path)
+				repo := buildRepoFromLocalPath(repoPath)
+				repos = append(repos, repo)
+				return fs.SkipDir
+			}
+
+			if d.IsDir() && (d.Name() == "node_modules" || d.Name() == "vendor" || d.Name() == ".cache") {
+				return fs.SkipDir
+			}
+
+			return nil
+		})
+	}
+
+	return repos
+}
+
+func buildRepoFromLocalPath(repoPath string) Repository {
+	gitConfigPath := filepath.Join(repoPath, ".git", "config")
+	originURL, _ := extractOriginURL(gitConfigPath)
+
+	owner, name, ok := parseGitHubURL(originURL)
+	if !ok {
+		name = filepath.Base(repoPath)
+		owner = "local"
+	}
+
+	repo := Repository{
+		Owner:       owner,
+		Name:        name,
+		FullName:    owner + "/" + name,
+		SSHURL:      originURL,
+		LocalPath:   repoPath,
+		ExistsLocal: true,
+	}
+	repo.ComputeSearchText()
+
+	return repo
 }
