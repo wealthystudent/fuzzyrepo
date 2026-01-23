@@ -1,0 +1,15 @@
+# Binary
+main
+fuzzyrepo
+
+# OS files
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Cache
+*.tmp

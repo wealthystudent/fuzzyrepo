@@ -82,7 +82,7 @@ func getClonedRepos(searchPath string) error {
 	localRepos := strings.Split(string(output), "\n")
 
 	if err != nil {
-		return fmt.Errorf("Error finding repositories", err)
+		return fmt.Errorf("error finding repositories: %w", err)
 	}
 
 	createLocalRepoCache(localRepos)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -16,11 +15,6 @@ func main() {
 	config, err := LoadConfig()
 	if err != nil {
 		log.Fatal("could not load config: ", err)
-		os.Exit(1)
-	}
-
-	if true {
-		fmt.Print(config.Affiliation)
 		os.Exit(1)
 	}
 

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -19,10 +18,8 @@ func getOs() string {
 func getHomeDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Println("Could not find home directory:", err)
 		return ""
 	}
-	fmt.Println("Your home directory is:", home)
 	return home
 }
 
@@ -53,36 +50,43 @@ func clamp(v, lo, hi int) int {
 
 func updateRepoJSON(config Config) error {
 	ctx := context.Background()
-	path := filepath.Join(getHomeDir(), ".local", "share", "fuzzyrepo", "repos.json")
+	cacheDir := filepath.Join(getHomeDir(), ".local", "share", "fuzzyrepo")
+	path := filepath.Join(cacheDir, "repos.json")
 
-	// Create GH Client
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return err
+	}
+
 	githubClient, err := getGithubClient(ctx)
 	if err != nil {
 		log.Fatal("Failed to create github client: ", err)
 		return err
 	}
 
-	// Extract remote repos
 	repos, err := getRemoteRepositories(ctx, githubClient)
 	if err != nil {
 		return err
 	}
 
-	// TODO: append local repos when implemented
-	// repos = append(repos, localRepos...)
-
-	// Marshal and write JSON to disk
 	b, err := json.MarshalIndent(repos, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, b, 0o644)
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
-// TODO: Make sure that the folder and file exists before reading it
 func loadRepoJSONIntoCache() error {
-	path := filepath.Join(getHomeDir(), ".local", "share", "fuzzyrepo", "repos.json")
+	cacheDir := filepath.Join(getHomeDir(), ".local", "share", "fuzzyrepo")
+	path := filepath.Join(cacheDir, "repos.json")
+
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return err
+	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
