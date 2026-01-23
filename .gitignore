@@ -1,6 +1,6 @@
 # Binary
 main
-fuzzyrepo
+/fuzzyrepo
 
 # OS files
 .DS_Store
