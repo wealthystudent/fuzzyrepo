@@ -67,7 +67,7 @@ func OpenInEditor(path, repoName string) error {
 }
 
 func openInNeovim(path, repoName, nvimAddr string) error {
-	nvimCmd := fmt.Sprintf("<C-\\><C-n>:tabnew | tcd %s | let t:tabname = '%s'<CR>", path, repoName)
+	nvimCmd := fmt.Sprintf("<C-\\><C-n>:tabnew | tcd %s | let t:tabname = '%s' | NvimTreeOpen<CR>", path, repoName)
 	cmd := exec.Command("nvim", "--server", nvimAddr, "--remote-send", nvimCmd)
 	return cmd.Run()
 }

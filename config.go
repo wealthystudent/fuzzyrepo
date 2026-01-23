@@ -17,7 +17,7 @@ type GitHubConfig struct {
 }
 
 type Config struct {
-	RepoRoots  string       `yaml:"repo_roots"`
+	RepoRoots  []string     `yaml:"repo_roots"`
 	CloneRoot  string       `yaml:"clone_root"`
 	GitHub     GitHubConfig `yaml:"github"`
 	MaxResults int          `yaml:"max_results"`
@@ -25,7 +25,7 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		RepoRoots: "",
+		RepoRoots: nil,
 		CloneRoot: "",
 		GitHub: GitHubConfig{
 			Affiliation: "owner,collaborator,organization_member",
@@ -36,18 +36,7 @@ func DefaultConfig() Config {
 }
 
 func (c Config) GetRepoRoots() []string {
-	if c.RepoRoots == "" {
-		return nil
-	}
-	parts := strings.Split(c.RepoRoots, ",")
-	var roots []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			roots = append(roots, p)
-		}
-	}
-	return roots
+	return c.RepoRoots
 }
 
 func (c Config) GetCloneRoot() string {
@@ -137,7 +126,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("max_results must be >= 0 (got %d)", c.MaxResults)
 	}
 
-	for _, root := range c.GetRepoRoots() {
+	for _, root := range c.RepoRoots {
 		if !filepath.IsAbs(root) {
 			return fmt.Errorf("repo_roots must contain absolute paths (got %q)", root)
 		}

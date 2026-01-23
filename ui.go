@@ -134,7 +134,7 @@ func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Mode
 }
 
 func (m *Model) loadConfigIntoInputs() {
-	m.inputs[cfgRepoRoots].SetValue(m.config.RepoRoots)
+	m.inputs[cfgRepoRoots].SetValue(strings.Join(m.config.RepoRoots, ", "))
 	m.inputs[cfgCloneRoot].SetValue(m.config.CloneRoot)
 	m.inputs[cfgAffiliation].SetValue(m.config.GitHub.Affiliation)
 	m.inputs[cfgOrgs].SetValue(m.config.GitHub.Orgs)
@@ -147,8 +147,16 @@ func (m *Model) saveConfigFromInputs() error {
 		maxResults = 0
 	}
 
+	var repoRoots []string
+	for _, p := range strings.Split(m.inputs[cfgRepoRoots].Value(), ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			repoRoots = append(repoRoots, p)
+		}
+	}
+
 	cfg := Config{
-		RepoRoots: m.inputs[cfgRepoRoots].Value(),
+		RepoRoots: repoRoots,
 		CloneRoot: m.inputs[cfgCloneRoot].Value(),
 		GitHub: GitHubConfig{
 			Affiliation: m.inputs[cfgAffiliation].Value(),
@@ -386,15 +394,17 @@ func (m Model) viewConfig() string {
 func (m Model) viewMain() string {
 	var b strings.Builder
 
-	baseStyle := lipgloss.NewStyle().Background(bgColor)
-
-	nameW := 35
-	ownerW := 20
 	localW := 6
+	separators := 4
+	ownerW := 20
+	nameW := 35
 
 	if m.width > 0 {
-		nameW = clamp(m.width/3, 15, 45)
-		ownerW = clamp(m.width/4, 10, 25)
+		ownerW = clamp(m.width/4, 10, 30)
+		nameW = m.width - ownerW - localW - separators
+		if nameW < 15 {
+			nameW = 15
+		}
 	}
 
 	b.WriteString(titleStyle.Render("fuzzyrepo"))
@@ -408,7 +418,7 @@ func (m Model) viewMain() string {
 
 	maxRows := 8
 	if m.height > 0 {
-		maxRows = clamp(m.height-8, 5, 15)
+		maxRows = max(5, m.height-8)
 	}
 
 	start := 0
@@ -466,6 +476,11 @@ func (m Model) viewMain() string {
 
 	keybinds := "↑↓ navigate   enter open   y copy   r refresh   , config   q quit"
 	b.WriteString(keybindStyle.Render(keybinds))
+
+	baseStyle := lipgloss.NewStyle().
+		Background(bgColor).
+		Width(m.width).
+		Height(m.height)
 
 	return baseStyle.Render(b.String())
 }

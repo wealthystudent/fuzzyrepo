@@ -42,19 +42,23 @@ Config file:
 All config fields (from `config.go`):
 
 ```yaml
-repo_roots: "/abs/path/to/repos,/abs/path/to/other/repos"
-clone_root: "/abs/path/to/clone/root" # defaults to first repo_roots entry; else ~/repos
+repo_roots:
+  - /abs/path/to/repos
+  - /abs/path/to/other/repos
+
+clone_root: /abs/path/to/clone/root  # defaults to first repo_roots entry; else ~/repos
 
 github:
-  affiliation: "owner,collaborator,organization_member"
-  orgs: "my-org,another-org" # optional filter (comma-separated)
+  affiliation: owner,collaborator,organization_member
+  orgs: my-org,another-org  # optional filter (comma-separated)
 
-max_results: 200 # 0 = unlimited
+max_results: 200  # 0 = unlimited
 ```
 
 Notes:
 
-- `repo_roots` and `clone_root` must be absolute paths.
+- `repo_roots` is a YAML list of absolute paths.
+- `clone_root` must be an absolute path.
 - Clone destination is `<clone_root>/<owner>/<repo>`.
 
 ## Usage
