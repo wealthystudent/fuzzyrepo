@@ -113,6 +113,61 @@ vim.keymap.set("n", "<leader>fr", "<cmd>Fuzzyrepo<cr>", { desc = "fuzzyrepo" })
 | `border` | string | `"rounded"` | Floating window border style |
 | `cmd` | string | `"fuzzyrepo"` | Command to run |
 
+### Tab names (optional)
+
+When opening a repo from Neovim, fuzzyrepo sets `t:tabname` to the repo name. To display this in your tabline instead of just the tab number, add a custom tabs module.
+
+#### NvChad
+
+In `lua/chadrc.lua`:
+
+```lua
+M.ui = {
+  tabufline = {
+    modules = {
+      tabs = function()
+        local fn = vim.fn
+        local result = ""
+        local tabs = fn.tabpagenr("$")
+
+        if tabs > 1 then
+          for nr = 1, tabs do
+            local name = fn.gettabvar(nr, "tabname", tostring(nr))
+            local hl = "TabO" .. (nr == fn.tabpagenr() and "n" or "ff")
+            result = result .. "%" .. nr .. "@TbGotoTab@%#Tb" .. hl .. "# " .. name .. " %X"
+          end
+
+          local new_tab = "%@TbNewTab@%#TbTabNewBtn# 󰐕 %X"
+          local toggle = "%@TbToggleTabs@%#TbTabTitle# TABS %X"
+          local small = "%@TbToggleTabs@%#TbTabTitle# 󰅁 %X"
+
+          return vim.g.TbTabsToggled == 1 and small or new_tab .. toggle .. result
+        end
+
+        return ""
+      end,
+    },
+  },
+}
+```
+
+#### Vanilla Neovim / other configs
+
+```lua
+vim.o.showtabline = 2
+vim.o.tabline = "%!v:lua.TabLine()"
+
+function _G.TabLine()
+  local s = ""
+  for i = 1, vim.fn.tabpagenr("$") do
+    local hl = (i == vim.fn.tabpagenr()) and "%#TabLineSel#" or "%#TabLine#"
+    local name = vim.fn.gettabvar(i, "tabname", tostring(i))
+    s = s .. hl .. " " .. name .. " "
+  end
+  return s .. "%#TabLineFill#"
+end
+```
+
 ## Clipboard (OSC52)
 
 `y` copies using OSC52 escape sequences. Your terminal (and tmux, if used) must allow OSC52 clipboard passthrough.

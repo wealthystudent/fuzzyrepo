@@ -47,10 +47,10 @@ func CloneRepo(repo Repository, config Config) (string, error) {
 	return destPath, nil
 }
 
-func OpenInEditor(path string) error {
+func OpenInEditor(path, repoName string) error {
 	nvimAddr := os.Getenv("NVIM")
 	if nvimAddr != "" {
-		return openInNeovim(path, nvimAddr)
+		return openInNeovim(path, repoName, nvimAddr)
 	}
 
 	editor := os.Getenv("EDITOR")
@@ -66,8 +66,8 @@ func OpenInEditor(path string) error {
 	return cmd.Run()
 }
 
-func openInNeovim(path, nvimAddr string) error {
-	nvimCmd := fmt.Sprintf("<C-\\><C-n>:tabnew | tcd %s<CR>", path)
+func openInNeovim(path, repoName, nvimAddr string) error {
+	nvimCmd := fmt.Sprintf("<C-\\><C-n>:tabnew | tcd %s | let t:tabname = '%s'<CR>", path, repoName)
 	cmd := exec.Command("nvim", "--server", nvimAddr, "--remote-send", nvimCmd)
 	return cmd.Run()
 }

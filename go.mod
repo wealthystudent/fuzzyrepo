@@ -1,4 +1,4 @@
-module main
+module fuzzyrepo
 
 go 1.25.5
 

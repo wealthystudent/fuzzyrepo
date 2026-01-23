@@ -67,7 +67,7 @@ func executeAction(repo *Repository, action Action, config Config) {
 			os.Exit(1)
 		}
 
-		if err := OpenInEditor(localPath); err != nil {
+		if err := OpenInEditor(localPath, repo.Name); err != nil {
 			if errors.Is(err, ErrNoEditor) {
 				fmt.Fprintln(os.Stderr, "Error: $EDITOR is not set")
 				os.Exit(1)
