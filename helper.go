@@ -66,12 +66,16 @@ func updateRepoCache(config Config) error {
 		return err
 	}
 
-	repos, err := getRemoteRepositories(ctx, githubClient, config)
+	remoteRepos, err := getRemoteRepositories(ctx, githubClient, config)
 	if err != nil {
 		return err
 	}
 
-	b, err := json.MarshalIndent(repos, "", "  ")
+	localRepos := indexLocalRepos(config.GetRepoRoots())
+
+	merged := mergeRepos(localRepos, remoteRepos)
+
+	b, err := json.MarshalIndent(merged, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -81,6 +85,34 @@ func updateRepoCache(config Config) error {
 		return err
 	}
 	return os.Rename(tmpPath, path)
+}
+
+func mergeRepos(local, remote []Repository) []Repository {
+	repoMap := make(map[string]Repository)
+
+	for _, r := range remote {
+		key := strings.ToLower(r.FullName)
+		repoMap[key] = r
+	}
+
+	for _, r := range local {
+		key := strings.ToLower(r.FullName)
+		if existing, ok := repoMap[key]; ok {
+			existing.LocalPath = r.LocalPath
+			existing.ExistsLocal = true
+			existing.ComputeSearchText()
+			repoMap[key] = existing
+		} else {
+			repoMap[key] = r
+		}
+	}
+
+	result := make([]Repository, 0, len(repoMap))
+	for _, r := range repoMap {
+		result = append(result, r)
+	}
+
+	return result
 }
 
 func loadRepoCache() ([]Repository, error) {
