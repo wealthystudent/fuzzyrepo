@@ -17,6 +17,7 @@ func main() {
 	}
 
 	uiMsgs := make(chan tea.Msg, 10)
+	refreshChan := make(chan struct{}, 1)
 
 	initial, err := loadRepoCache()
 	if err != nil {
@@ -24,23 +25,32 @@ func main() {
 	}
 
 	go func() {
-		uiMsgs <- refreshStartedMsg{}
+		doRefresh := func() {
+			uiMsgs <- refreshStartedMsg{}
 
-		err := updateRepoCache(config)
-		if err != nil {
-			log.Println("Warning: could not update repo cache:", err)
+			cfg, _ := LoadConfig()
+			err := updateRepoCache(cfg)
+			if err != nil {
+				log.Println("Warning: could not update repo cache:", err)
+			}
+
+			updated, err := loadRepoCache()
+			if err != nil {
+				log.Println("Warning: could not load repo cache:", err)
+			}
+
+			uiMsgs <- reposUpdatedMsg(updated)
+			uiMsgs <- refreshFinishedMsg{}
 		}
 
-		updated, err := loadRepoCache()
-		if err != nil {
-			log.Println("Warning: could not load repo cache:", err)
-		}
+		doRefresh()
 
-		uiMsgs <- reposUpdatedMsg(updated)
-		uiMsgs <- refreshFinishedMsg{}
+		for range refreshChan {
+			doRefresh()
+		}
 	}()
 
-	selectedRepo, action := ui(initial, config, uiMsgs)
+	selectedRepo, action := ui(initial, config, uiMsgs, refreshChan)
 	executeAction(selectedRepo, action, config)
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,6 +25,10 @@ var (
 
 	dimStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
+
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("212"))
 )
 
 type reposUpdatedMsg []Repository
@@ -54,16 +59,19 @@ type Model struct {
 	config         Config
 	selectedRepo   *Repository
 	selectedAction Action
+
+	refreshChan chan<- struct{}
 }
 
-func newModel(all []Repository, config Config) Model {
+func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Model {
 	m := Model{
-		all:    all,
-		query:  "",
-		config: config,
+		all:         all,
+		query:       "",
+		config:      config,
+		refreshChan: refreshChan,
 	}
 	m.applySearch()
-	m.status = "Type to search · ↑/↓ navigate · Enter open · y copy · r refresh · q quit"
+	m.status = fmt.Sprintf("%d repos · ↑↓ navigate · Enter open · y copy · r refresh · , config · q quit", len(all))
 	return m
 }
 
@@ -94,6 +102,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = max(0, len(m.results)-1)
 		}
 		m.status = fmt.Sprintf("Repos loaded: %d", len(m.all))
+		return m, nil
+
+	case configEditedMsg:
+		if msg.err != nil {
+			m.status = fmt.Sprintf("Config error: %v", msg.err)
+		} else {
+			m.config = msg.config
+			m.status = "Config reloaded"
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -143,6 +160,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedAction = ActionCopy
 						return m, tea.Quit
 					}
+				case "r":
+					if !m.refreshing {
+						m.refreshing = true
+						m.status = "Refreshing..."
+						select {
+						case m.refreshChan <- struct{}{}:
+						default:
+						}
+					}
+				case ",":
+					return m, openConfigInEditor(m.config)
 				default:
 					m.query += key
 					m.applySearch()
@@ -180,8 +208,44 @@ func (m *Model) applySearch() {
 	}
 }
 
+type configEditedMsg struct {
+	config Config
+	err    error
+}
+
+func openConfigInEditor(cfg Config) tea.Cmd {
+	return func() tea.Msg {
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			return configEditedMsg{err: ErrNoEditor}
+		}
+
+		configPath := ConfigPath()
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			if err := SaveConfig(cfg); err != nil {
+				return configEditedMsg{err: err}
+			}
+		}
+
+		cmd := exec.Command(editor, configPath)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			return configEditedMsg{err: err}
+		}
+
+		newCfg, err := LoadConfig()
+		return configEditedMsg{config: newCfg, err: err}
+	}
+}
+
 func (m Model) View() string {
 	var b strings.Builder
+
+	b.WriteString(titleStyle.Render("fuzzyrepo"))
+	b.WriteString("\n\n")
 
 	ownerW := 20
 	nameW := 30
@@ -200,7 +264,7 @@ func (m Model) View() string {
 	b.WriteString(dimStyle.Render(strings.Repeat("─", min(m.width, ownerW+nameW+localW+2*sepW))))
 	b.WriteString("\n")
 
-	maxRows := m.height - 7
+	maxRows := m.height - 9
 	if maxRows < 3 {
 		maxRows = 3
 	}
@@ -248,8 +312,8 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg) (*Repository, Action) {
-	model := newModel(initial, config)
+func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}) (*Repository, Action) {
+	model := newModel(initial, config, refreshChan)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	go func() {
