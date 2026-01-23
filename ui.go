@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,14 +26,14 @@ var (
 			Foreground(lipgloss.Color("241"))
 )
 
-type reposUpdatedMsg []RepoDTO
+type reposUpdatedMsg []Repository
 type refreshStartedMsg struct{}
 type refreshFinishedMsg struct{}
 
-type UIDTO struct {
-	all     []RepoDTO
+type Model struct {
+	all     []Repository
 	query   string
-	results []RepoDTO
+	results []Repository
 
 	cursor int
 
@@ -45,19 +44,19 @@ type UIDTO struct {
 	height int
 }
 
-func newModel(all []RepoDTO) UIDTO {
-	m := UIDTO{
+func newModel(all []Repository) Model {
+	m := Model{
 		all:   all,
 		query: "",
 	}
 	m.applySearch()
-	m.status = "Type to search · ↑/↓ to navigate · Enter to open · Esc/Ctrl+C to quit"
+	m.status = "Type to search · ↑/↓ navigate · Enter open · y copy · q quit"
 	return m
 }
 
-func (m UIDTO) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd { return nil }
 
-func (m UIDTO) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
@@ -66,7 +65,7 @@ func (m UIDTO) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case refreshStartedMsg:
 		m.refreshing = true
-		m.status = "Refreshing repo list in background..."
+		m.status = "Refreshing..."
 		return m, nil
 
 	case refreshFinishedMsg:
@@ -75,13 +74,13 @@ func (m UIDTO) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case reposUpdatedMsg:
-		m.all = []RepoDTO(msg)
+		m.all = []Repository(msg)
 		m.applySearch()
 
 		if m.cursor >= len(m.results) {
 			m.cursor = max(0, len(m.results)-1)
 		}
-		m.status = fmt.Sprintf("Repo list updated. Total: %d", len(m.all))
+		m.status = fmt.Sprintf("Repos loaded: %d", len(m.all))
 		return m, nil
 
 	case tea.KeyMsg:
@@ -107,27 +106,26 @@ func (m UIDTO) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			r := m.results[m.cursor]
-
-			if err := openRepoDemo(r); err != nil {
-				m.status = "Error: " + err.Error()
-				return m, nil
-			}
-			m.status = "Opened: " + r.Name
+			m.status = "Opening: " + r.FullName
 			return m, nil
 
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
-				// simple ASCII backspace; fine for typical repo names
 				m.query = m.query[:len(m.query)-1]
 				m.applySearch()
 			}
 			return m, nil
 
 		default:
-			// accept printable characters into the query (live update)
 			if msg.Type == tea.KeyRunes {
-				m.query += msg.String()
-				m.applySearch()
+				key := msg.String()
+				switch key {
+				case "q":
+					return m, tea.Quit
+				default:
+					m.query += key
+					m.applySearch()
+				}
 				return m, nil
 			}
 		}
@@ -136,7 +134,7 @@ func (m UIDTO) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *UIDTO) applySearch() {
+func (m *Model) applySearch() {
 	q := strings.TrimSpace(m.query)
 	if q == "" {
 		m.results = m.all
@@ -146,15 +144,11 @@ func (m *UIDTO) applySearch() {
 
 	haystack := make([]string, 0, len(m.all))
 	for _, r := range m.all {
-		localStr := "remote"
-		if r.ExistsLocal {
-			localStr = "local"
-		}
-		haystack = append(haystack, r.Name+" "+r.Path+" "+localStr)
+		haystack = append(haystack, r.SearchText)
 	}
 
 	matches := fuzzy.Find(q, haystack)
-	out := make([]RepoDTO, 0, len(matches))
+	out := make([]Repository, 0, len(matches))
 	for _, mt := range matches {
 		out = append(out, m.all[mt.Index])
 	}
@@ -165,24 +159,26 @@ func (m *UIDTO) applySearch() {
 	}
 }
 
-func (m UIDTO) View() string {
+func (m Model) View() string {
 	var b strings.Builder
 
-	// Column widths
+	ownerW := 20
+	nameW := 30
 	localW := 5
 	sepW := 3
-	pathW := clamp(m.width/2, 30, 80)
-	nameW := max(10, m.width-(pathW+localW+2*sepW))
 
-	// Header row
+	if m.width > 0 {
+		ownerW = clamp(m.width/4, 10, 25)
+		nameW = clamp(m.width/3, 15, 40)
+	}
+
 	b.WriteString(headerStyle.Render(
-		padOrTrim("NAME", nameW) + " | " + padOrTrim("LOCAL", localW) + " | " + padOrTrim("PATH", pathW),
+		padOrTrim("OWNER", ownerW) + " | " + padOrTrim("NAME", nameW) + " | " + padOrTrim("LOCAL", localW),
 	))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(strings.Repeat("-", min(m.width, nameW+localW+pathW+2*sepW))))
+	b.WriteString(dimStyle.Render(strings.Repeat("─", min(m.width, ownerW+nameW+localW+2*sepW))))
 	b.WriteString("\n")
 
-	// Rows viewport
 	maxRows := m.height - 7
 	if maxRows < 3 {
 		maxRows = 3
@@ -200,9 +196,13 @@ func (m UIDTO) View() string {
 	} else {
 		for i := start; i < end; i++ {
 			r := m.results[i]
-			row := padOrTrim(r.Name, nameW) +
-				" | " + padOrTrim(fmt.Sprintf("%v", r.ExistsLocal), localW) +
-				" | " + padOrTrim(r.Path, pathW)
+			localStr := "no"
+			if r.ExistsLocal {
+				localStr = "yes"
+			}
+			row := padOrTrim(r.Owner, ownerW) +
+				" | " + padOrTrim(r.Name, nameW) +
+				" | " + padOrTrim(localStr, localW)
 
 			if i == m.cursor {
 				b.WriteString(selectedRow.Render(row))
@@ -215,13 +215,11 @@ func (m UIDTO) View() string {
 
 	b.WriteString("\n")
 
-	// Background refresh indicator
 	if m.refreshing {
-		b.WriteString(dimStyle.Render("refreshing in background..."))
+		b.WriteString(dimStyle.Render("refreshing..."))
 		b.WriteString("\n")
 	}
 
-	// Status + Query
 	b.WriteString(dimStyle.Render(m.status))
 	b.WriteString("\n")
 	b.WriteString("> " + m.query)
@@ -229,10 +227,9 @@ func (m UIDTO) View() string {
 	return b.String()
 }
 
-func ui(initial []RepoDTO, uiMsgs <-chan tea.Msg) {
+func ui(initial []Repository, uiMsgs <-chan tea.Msg) {
 	p := tea.NewProgram(newModel(initial), tea.WithAltScreen())
 
-	// Forward background messages into Bubble Tea.
 	go func() {
 		for msg := range uiMsgs {
 			p.Send(msg)
@@ -243,15 +240,4 @@ func ui(initial []RepoDTO, uiMsgs <-chan tea.Msg) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}
-
-func openRepoDemo(r RepoDTO) error {
-	if r.ExistsLocal {
-		cmd := exec.Command("code", r.Path)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
-
-	return nil
 }

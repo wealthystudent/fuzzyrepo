@@ -3,13 +3,9 @@ package main
 import (
 	"log"
 	"os"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-// Cache for the repositories. Collection of RepoDTO pointers.
-var repoCache []*RepoDTO
 
 func main() {
 	config, err := LoadConfig()
@@ -20,33 +16,25 @@ func main() {
 
 	uiMsgs := make(chan tea.Msg, 10)
 
-	var initial []RepoDTO
-
-	if err := loadRepoJSONIntoCache(); err != nil {
-		log.Println("Warning: could not load repo cache JSON:", err)
-		repoCache = nil
+	initial, err := loadRepoCache()
+	if err != nil {
+		log.Println("Warning: could not load repo cache:", err)
 	}
-	initial = repoPtrsToValues(repoCache)
 
 	go func() {
 		uiMsgs <- refreshStartedMsg{}
 
-		err := updateRepoJSON(config)
+		err := updateRepoCache(config)
 		if err != nil {
-			log.Fatal("Could not update repos.json", err)
+			log.Println("Warning: could not update repo cache:", err)
 		}
 
-		time.Sleep(8 * time.Second)
-
-		var updated []RepoDTO
-		if err := loadRepoJSONIntoCache(); err != nil {
-			log.Println("Warning: could not load repo cache JSON:", err)
-			repoCache = nil
+		updated, err := loadRepoCache()
+		if err != nil {
+			log.Println("Warning: could not load repo cache:", err)
 		}
-		updated = repoPtrsToValues(repoCache)
 
 		uiMsgs <- reposUpdatedMsg(updated)
-
 		uiMsgs <- refreshFinishedMsg{}
 	}()
 

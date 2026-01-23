@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,7 +10,6 @@ import (
 )
 
 func getOs() string {
-	// get runtime OS
 	return runtime.GOOS
 }
 
@@ -23,7 +21,6 @@ func getHomeDir() string {
 	return home
 }
 
-// Makes a string exactly w characters long by cutting it down (adding “…” if needed) or padding it with spaces.
 func padOrTrim(s string, w int) string {
 	if w <= 0 {
 		return ""
@@ -37,7 +34,6 @@ func padOrTrim(s string, w int) string {
 	return s + strings.Repeat(" ", w-len(s))
 }
 
-// Constrains v to the inclusive range [lo, hi] (returns lo if below, hi if above).
 func clamp(v, lo, hi int) int {
 	if v < lo {
 		return lo
@@ -48,10 +44,18 @@ func clamp(v, lo, hi int) int {
 	return v
 }
 
-func updateRepoJSON(config Config) error {
+func getCacheDir() string {
+	return filepath.Join(getHomeDir(), ".local", "share", "fuzzyrepo")
+}
+
+func getCachePath() string {
+	return filepath.Join(getCacheDir(), "repos.json")
+}
+
+func updateRepoCache(config Config) error {
 	ctx := context.Background()
-	cacheDir := filepath.Join(getHomeDir(), ".local", "share", "fuzzyrepo")
-	path := filepath.Join(cacheDir, "repos.json")
+	cacheDir := getCacheDir()
+	path := getCachePath()
 
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return err
@@ -59,11 +63,10 @@ func updateRepoJSON(config Config) error {
 
 	githubClient, err := getGithubClient(ctx)
 	if err != nil {
-		log.Fatal("Failed to create github client: ", err)
 		return err
 	}
 
-	repos, err := getRemoteRepositories(ctx, githubClient)
+	repos, err := getRemoteRepositories(ctx, githubClient, config)
 	if err != nil {
 		return err
 	}
@@ -80,35 +83,30 @@ func updateRepoJSON(config Config) error {
 	return os.Rename(tmpPath, path)
 }
 
-func loadRepoJSONIntoCache() error {
-	cacheDir := filepath.Join(getHomeDir(), ".local", "share", "fuzzyrepo")
-	path := filepath.Join(cacheDir, "repos.json")
+func loadRepoCache() ([]Repository, error) {
+	cacheDir := getCacheDir()
+	path := getCachePath()
 
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return err
+		return nil, err
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
-	}
-
-	var repos []*RepoDTO
-	if err := json.Unmarshal(data, &repos); err != nil {
-		return err
-	}
-
-	repoCache = repos
-	return nil
-}
-
-func repoPtrsToValues(in []*RepoDTO) []RepoDTO {
-	out := make([]RepoDTO, 0, len(in))
-	for _, p := range in {
-		if p == nil {
-			continue
+		if os.IsNotExist(err) {
+			return nil, nil
 		}
-		out = append(out, *p) // copy value into UI slice (avoids sharing/mutation issues)
+		return nil, err
 	}
-	return out
+
+	var repos []Repository
+	if err := json.Unmarshal(data, &repos); err != nil {
+		return nil, err
+	}
+
+	for i := range repos {
+		repos[i].ComputeSearchText()
+	}
+
+	return repos, nil
 }

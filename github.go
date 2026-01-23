@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os/exec"
 	"strings"
 
@@ -11,7 +10,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// Retrieves locally stored gh auth token
 func getAuthToken() (string, error) {
 	cmd := exec.Command("gh", "auth", "token")
 	output, err := cmd.Output()
@@ -21,13 +19,10 @@ func getAuthToken() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// Create github client
 func getGithubClient(ctx context.Context) (*github.Client, error) {
-
 	token, err := getAuthToken()
 	if err != nil {
-		log.Fatal("Not logged into gh: ", err)
-		return nil, err
+		return nil, fmt.Errorf("not logged into gh: %w", err)
 	}
 
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
@@ -36,29 +31,35 @@ func getGithubClient(ctx context.Context) (*github.Client, error) {
 	return github.NewClient(client), nil
 }
 
-// Fetch remote repositories and return them as a list of RepoDTOs.
-func getRemoteRepositories(ctx context.Context, githubClient *github.Client) ([]*RepoDTO, error) {
-
+func getRemoteRepositories(ctx context.Context, githubClient *github.Client, cfg Config) ([]Repository, error) {
 	opts := &github.RepositoryListOptions{
 		Visibility:  "all",
-		Affiliation: "owner,collaborator,organization_member",
+		Affiliation: cfg.GitHub.Affiliation,
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
 
-	repos := []*RepoDTO{}
+	var repos []Repository
 
 	for {
 		remoteRepos, resp, err := githubClient.Repositories.List(ctx, "", opts)
 		if err != nil {
 			return nil, err
 		}
-		// TODO: Fix exists local
+
 		for _, repo := range remoteRepos {
-			repos = append(repos, &RepoDTO{
-				Name:        repo.GetName(),
-				Path:        repo.GetSSHURL(),
+			owner := repo.GetOwner().GetLogin()
+			name := repo.GetName()
+
+			r := Repository{
+				Owner:       owner,
+				Name:        name,
+				FullName:    owner + "/" + name,
+				SSHURL:      repo.GetSSHURL(),
+				LocalPath:   "",
 				ExistsLocal: false,
-			})
+			}
+			r.ComputeSearchText()
+			repos = append(repos, r)
 		}
 
 		if resp.NextPage == 0 {
@@ -66,6 +67,10 @@ func getRemoteRepositories(ctx context.Context, githubClient *github.Client) ([]
 		}
 
 		opts.Page = resp.NextPage
+
+		if cfg.MaxResults > 0 && len(repos) >= cfg.MaxResults {
+			break
+		}
 	}
 
 	return repos, nil
