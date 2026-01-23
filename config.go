@@ -31,7 +31,7 @@ func DefaultConfig() Config {
 			Affiliation: "owner,collaborator,organization_member",
 			Orgs:        "",
 		},
-		MaxResults: 200,
+		MaxResults: 0,
 	}
 }
 
