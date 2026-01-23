@@ -11,8 +11,6 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-// ---- Styles ----
-
 var (
 	headerStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -29,13 +27,9 @@ var (
 			Foreground(lipgloss.Color("241"))
 )
 
-// ---- Messages sent into the UI program ----
-
 type reposUpdatedMsg []RepoDTO
 type refreshStartedMsg struct{}
 type refreshFinishedMsg struct{}
-
-// ---- Bubble Tea model ----
 
 type UIDTO struct {
 	all     []RepoDTO
@@ -114,7 +108,6 @@ func (m UIDTO) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			r := m.results[m.cursor]
 
-			// HOOK: replace with your real open/clone logic
 			if err := openRepoDemo(r); err != nil {
 				m.status = "Error: " + err.Error()
 				return m, nil
@@ -236,7 +229,6 @@ func (m UIDTO) View() string {
 	return b.String()
 }
 
-// UI runner: pass initial repo list + a channel of tea.Msg from your background worker.
 func ui(initial []RepoDTO, uiMsgs <-chan tea.Msg) {
 	p := tea.NewProgram(newModel(initial), tea.WithAltScreen())
 
@@ -253,15 +245,13 @@ func ui(initial []RepoDTO, uiMsgs <-chan tea.Msg) {
 	}
 }
 
-// ---- Hook demo: replace with your open/clone logic ----
-
 func openRepoDemo(r RepoDTO) error {
-	// Demo: if local, try `code <path>`
 	if r.ExistsLocal {
 		cmd := exec.Command("code", r.Path)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 	}
+
 	return nil
 }

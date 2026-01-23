@@ -1,50 +1,83 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
+// Config defines all configuration options.
+//
+// Put defaults in DefaultConfig(), and enforce rules in Validate().
+// That way adding new fields stays simple.
 type Config struct {
-	LocalRepoPath string
+	LocalRepoPath string `yaml:"local_repo_path"`
+	Affiliation   string `yaml:"affiliation"`
+	MaxResults    int    `yaml:"max_results"`
 }
 
-func LoadConfig() (*Config, error) {
-	configPath := DefaultConfigPath()
-	b, err := os.ReadFile(configPath)
+// Returns the default config
+func DefaultConfig() Config {
+	return Config{
+		LocalRepoPath: "",
+		Affiliation:   "owner",
+		MaxResults:    100,
+	}
+}
+
+// LoadConfig reads YAML from disk, merges it onto defaults, and validates.
+func LoadConfig() (Config, error) {
+	path := DefaultConfigPath()
+
+	cfg := DefaultConfig()
+
+	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Config{}, nil
+			// config file is optional
+			return cfg, nil
 		}
-		return nil, err
+		return Config{}, err
 	}
 
-	line := strings.TrimSpace(string(b))
-	const prefix = `local-repo-directory:`
-	if !strings.HasPrefix(line, prefix) {
-		return nil, fmt.Errorf("invalid config: expected %q", prefix)
+	// Unmarshal onto cfg so defaults remain for fields not in the file.
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
 
-	val := strings.TrimSpace(strings.TrimPrefix(line, prefix))
-	val = strings.Trim(val, `"'`) // remove optional quotes
+	if err := cfg.Validate(); err != nil {
+		return Config{}, fmt.Errorf("invalid config %s: %w", path, err)
+	}
 
-	return &Config{LocalRepoPath: val}, nil
+	return cfg, nil
 }
 
-func GetConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+func (c Config) Validate() error {
+	// Config.Affiliation
+	if c.Affiliation == "" {
+		return errors.New("affiliation cannot be empty")
 	}
-	return filepath.Join(home, ".fuzzyrepo.conf"), nil
+	switch c.Affiliation {
+	case "owner", "collaborator", "organization":
+		// ok
+	default:
+		return fmt.Errorf("affiliation must be one of: owner, collaborator, organization (got %q)", c.Affiliation)
+	}
+
+	// Config.MaxResults
+	if c.MaxResults < 0 {
+		return fmt.Errorf("max_results must be >= 0 (got %d)", c.MaxResults)
+	}
+	return nil
 }
 
 func DefaultConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".fuzzyrepo.conf" // fallback
+		return ".fuzzyrepo.yaml"
 	}
-	return filepath.Join(home, ".fuzzyrepo.conf")
+	return filepath.Join(home, ".fuzzyrepo.yaml")
 }

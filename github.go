@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"os/exec"
 	"strings"
 
@@ -12,8 +11,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// Retrieves locally stored gh auth token
 func getAuthToken() (string, error) {
-	// Uses the gh CLI to get the authentication token
 	cmd := exec.Command("gh", "auth", "token")
 	output, err := cmd.Output()
 	if err != nil {
@@ -22,63 +21,68 @@ func getAuthToken() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func getOauth2Client(ctx context.Context, token string) (*http.Client, error) {
-	// Creates an OAuth2 client using the provided token
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	return oauth2.NewClient(ctx, ts), nil
-}
-
+// Create github client
 func getGithubClient(ctx context.Context) (*github.Client, error) {
-	// Creates a GitHub client using the provided HTTP client
-	token, err := getAuthToken()
 
+	token, err := getAuthToken()
 	if err != nil {
 		log.Fatal("Not logged into gh: ", err)
 		return nil, err
 	}
 
-	client, err := getOauth2Client(ctx, token)
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+	client := oauth2.NewClient(ctx, ts)
 
-	if err != nil {
-		log.Fatal("Failed to create OAuth2 client: ", err)
-		return nil, err
-	}
 	return github.NewClient(client), nil
 }
 
-func getRemoteRepositories(ctx context.Context, githubClient *github.Client) error {
-	// Fetches remote repositories and populates the repoCache
+// Fetch remote repositories and return them as a list of RepoDTOs.
+func getRemoteRepositories(ctx context.Context, githubClient *github.Client) ([]*RepoDTO, error) {
 
 	opts := &github.RepositoryListOptions{
-		Visibility:  "all",                                    // Can be "public", "private", or "all"
-		Affiliation: "owner,collaborator,organization_member", // Include repos from all affiliations
-		ListOptions: github.ListOptions{PerPage: 100},         // Fetch maximum items per page
+		Visibility:  "all",
+		Affiliation: "owner,collaborator,organization_member",
+		ListOptions: github.ListOptions{PerPage: 100},
 	}
 
+	repos := []*RepoDTO{}
+
 	for {
-		remote_repos, resp, err := githubClient.Repositories.List(ctx, "", opts)
+		remoteRepos, resp, err := githubClient.Repositories.List(ctx, "", opts)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		for _, repo := range remote_repos {
-			dto := &RepoDTO{
+		// TODO: Fix exists local
+		for _, repo := range remoteRepos {
+			repos = append(repos, &RepoDTO{
 				Name:        repo.GetName(),
 				Path:        repo.GetSSHURL(),
 				ExistsLocal: false,
-			} // Initialize RepoDTO, as value
-			repoCache = append(repoCache, dto) // Append the DTO pointer to the repoCache
+			})
 		}
+
 		if resp.NextPage == 0 {
 			break
 		}
-		fmt.Printf("Successfully loaded %d repos, page %d\n", len(repoCache), opts.Page)
+
 		opts.Page = resp.NextPage
-		if opts.Page == 4 {
-			break
-		}
 	}
 
+	return repos, nil
+}
+
+func cloneRepo(ctx context.Context, sshURL, localPath string) error {
+	if strings.TrimSpace(sshURL) == "" {
+		return fmt.Errorf("sshURL is empty")
+	}
+	if strings.TrimSpace(localPath) == "" {
+		return fmt.Errorf("localPath is empty")
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "clone", sshURL, localPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git clone failed: %w\n%s", err, string(out))
+	}
 	return nil
 }

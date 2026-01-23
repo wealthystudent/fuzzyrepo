@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,20 +51,33 @@ func clamp(v, lo, hi int) int {
 	return v
 }
 
-func updateRepoJSON(config *Config) error {
-	// ctx := context.Background()
+func updateRepoJSON(config Config) error {
+	ctx := context.Background()
+	path := filepath.Join(getHomeDir(), ".local", "share", "fuzzyrepo", "repos.json")
 
 	// Create GH Client
-	// githubClient, err := getGithubClient(ctx)
-	// if err != nil {
-	// 	log.Fatal("Failed to create github client: ", err)
-	// 	return err
-	// }
+	githubClient, err := getGithubClient(ctx)
+	if err != nil {
+		log.Fatal("Failed to create github client: ", err)
+		return err
+	}
 
-	// Run logic for extracting from github and local and populate the json file
+	// Extract remote repos
+	repos, err := getRemoteRepositories(ctx, githubClient)
+	if err != nil {
+		return err
+	}
 
-	return nil
+	// TODO: append local repos when implemented
+	// repos = append(repos, localRepos...)
 
+	// Marshal and write JSON to disk
+	b, err := json.MarshalIndent(repos, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, b, 0o644)
 }
 
 // TODO: Make sure that the folder and file exists before reading it
@@ -81,4 +96,15 @@ func loadRepoJSONIntoCache() error {
 
 	repoCache = repos
 	return nil
+}
+
+func repoPtrsToValues(in []*RepoDTO) []RepoDTO {
+	out := make([]RepoDTO, 0, len(in))
+	for _, p := range in {
+		if p == nil {
+			continue
+		}
+		out = append(out, *p) // copy value into UI slice (avoids sharing/mutation issues)
+	}
+	return out
 }

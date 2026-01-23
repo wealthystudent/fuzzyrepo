@@ -3,12 +3,12 @@ module main
 go 1.25.5
 
 require (
-	github.com/alecthomas/kong v1.13.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/sahilm/fuzzy v0.1.1
 	golang.org/x/oauth2 v0.34.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
