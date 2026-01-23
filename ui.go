@@ -401,7 +401,7 @@ func (m Model) viewMain() string {
 	b.WriteString("\n\n")
 
 	header := headerStyle.Render(
-		padOrTrim("REPO", nameW) + "  " + padOrTrim("OWNER", ownerW) + "  " + padOrTrim("LOCAL", localW),
+		padOrTrim("REPO", nameW) + "  " + padOrTrim("LOCAL", localW) + "  " + padOrTrim("OWNER", ownerW),
 	)
 	b.WriteString(header)
 	b.WriteString("\n")
@@ -434,14 +434,14 @@ func (m Model) viewMain() string {
 			if i == m.cursor {
 				row := cursorStyle.Render(
 					padOrTrim(r.Name, nameW) + "  " +
-						padOrTrim(r.Owner, ownerW) + "  " +
-						padOrTrim(localText, localW),
+						padOrTrim(localText, localW) + "  " +
+						padOrTrim(r.Owner, ownerW),
 				)
 				b.WriteString(row)
 			} else {
 				namePart := repoNameStyle.Render(padOrTrim(r.Name, nameW))
 				ownerPart := ownerStyle.Render(padOrTrim(r.Owner, ownerW))
-				row := namePart + "  " + ownerPart + "  " + localStyled
+				row := namePart + "  " + localStyled + "  " + ownerPart
 				b.WriteString(row)
 			}
 			b.WriteString("\n")
