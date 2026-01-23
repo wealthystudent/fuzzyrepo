@@ -1,15 +1,118 @@
 # fuzzyrepo
-CLI tool for fuzzy finding remote and local repositories
 
-## Motivation
-Easily search and open both remote and local repositories without the need to switch to browser to search for repos.
-See [link to issue](https://github.com/orgs/TelenorNorgeInternal/projects/148/views/1)
+A fast TUI for fuzzy searching GitHub (remote) + local repositories, with clone/open/copy actions.
+
+## Features
+
+- Fuzzy search across remote GitHub repos and local repos
+- Marks whether a repo already exists locally
+- `Enter` opens the repo (clones first if needed)
+- `y` copies the local path (clones first if needed) via OSC52
+- `r` refreshes the repo cache (remote + local)
+- `,` opens your config in `$EDITOR`
+- Neovim integration via a lightweight floating-terminal plugin
+
+## Installation
+
+```bash
+go install github.com/wealthystudent/fuzzyrepo@latest
+```
+
+Note: if this is a private repo, `go install` needs Git credentials (or SSH) that can access `github.com/wealthystudent/fuzzyrepo`.
+
+Prereqs:
+
+- `git`
+- GitHub CLI (`gh`) and an authenticated session:
+
+```bash
+gh auth login
+```
+
+`fuzzyrepo` uses `gh auth token` under the hood.
+
+## Configuration
+
+Config file:
+
+- macOS/Linux: `~/.config/fuzzyrepo/config.yaml` (or `$XDG_CONFIG_HOME/fuzzyrepo/config.yaml`)
+- Windows: `%APPDATA%\fuzzyrepo\config.yaml`
+- Legacy fallback (if present): `~/.fuzzyrepo.yaml`
+
+All config fields (from `config.go`):
+
+```yaml
+repo_roots: "/abs/path/to/repos,/abs/path/to/other/repos"
+clone_root: "/abs/path/to/clone/root" # defaults to first repo_roots entry; else ~/repos
+
+github:
+  affiliation: "owner,collaborator,organization_member"
+  orgs: "my-org,another-org" # optional filter (comma-separated)
+
+max_results: 200 # 0 = unlimited
+```
+
+Notes:
+
+- `repo_roots` and `clone_root` must be absolute paths.
+- Clone destination is `<clone_root>/<owner>/<repo>`.
 
 ## Usage
-Run with:
 
-'''
-fzrp
-'''
+Run:
 
+```bash
+fuzzyrepo
+```
 
+Keybinds:
+
+| Key | Action |
+| --- | --- |
+| ↑ / ↓ | Navigate |
+| Enter | Open (clone if needed) |
+| y | Copy local path (clone if needed) |
+| r | Refresh |
+| , | Edit config in `$EDITOR` |
+| q | Quit |
+
+## Neovim plugin
+
+The plugin runs `fuzzyrepo` in a floating terminal and sets `NVIM=$VIM_SERVERNAME` so selecting a repo opens it in the same Neovim instance (new tab + `:tcd` to the repo).
+
+### lazy.nvim
+
+```lua
+{
+  "wealthystudent/fuzzyrepo",
+  config = function()
+    require("fuzzyrepo").setup({
+      width = 0.8,
+      height = 0.8,
+      border = "rounded",
+      cmd = "fuzzyrepo",
+    })
+  end,
+}
+```
+
+### Command + keymap
+
+The plugin defines `:Fuzzyrepo`.
+
+```lua
+vim.keymap.set("n", "<leader>fr", "<cmd>Fuzzyrepo<cr>", { desc = "fuzzyrepo" })
+```
+
+### Setup options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `width` | number | `0.8` | Float width as a fraction of `vim.o.columns` |
+| `height` | number | `0.8` | Float height as a fraction of `vim.o.lines` |
+| `border` | string | `"rounded"` | Floating window border style |
+| `cmd` | string | `"fuzzyrepo"` | Command to run |
+
+## Clipboard (OSC52)
+
+`y` copies using OSC52 escape sequences. Your terminal (and tmux, if used) must allow OSC52 clipboard passthrough.
