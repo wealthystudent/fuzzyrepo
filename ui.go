@@ -12,23 +12,42 @@ import (
 )
 
 var (
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("229")).
-			Background(lipgloss.Color("57")).
-			Padding(0, 1)
+	bgColor = lipgloss.Color("#0a0a0a")
 
-	selectedRow = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("230")).
-			Background(lipgloss.Color("62")).
+	repoNameStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#ffffff")).
 			Bold(true)
 
+	ownerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#555555"))
+
+	localYesStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#555555"))
+
+	localNoStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#333333"))
+
+	cursorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888")).
+			Background(lipgloss.Color("#1a1a1a"))
+
+	headerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#444444"))
+
 	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(lipgloss.Color("#444444"))
 
 	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("212"))
+			Foreground(lipgloss.Color("#666666"))
+
+	keybindStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#333333"))
+
+	promptStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666"))
+
+	queryStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#ffffff"))
 )
 
 type reposUpdatedMsg []Repository
@@ -71,7 +90,6 @@ func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Mode
 		refreshChan: refreshChan,
 	}
 	m.applySearch()
-	m.status = fmt.Sprintf("%d repos · ↑↓ navigate · Enter open · y copy · r refresh · , config · q quit", len(all))
 	return m
 }
 
@@ -86,12 +104,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case refreshStartedMsg:
 		m.refreshing = true
-		m.status = "Refreshing..."
+		m.status = "refreshing..."
 		return m, nil
 
 	case refreshFinishedMsg:
 		m.refreshing = false
-		m.status = "Refresh complete."
+		m.status = ""
 		return m, nil
 
 	case reposUpdatedMsg:
@@ -101,15 +119,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.cursor >= len(m.results) {
 			m.cursor = max(0, len(m.results)-1)
 		}
-		m.status = fmt.Sprintf("Repos loaded: %d", len(m.all))
+		m.status = fmt.Sprintf("%d repos", len(m.all))
 		return m, nil
 
 	case configEditedMsg:
 		if msg.err != nil {
-			m.status = fmt.Sprintf("Config error: %v", msg.err)
+			m.status = fmt.Sprintf("config error: %v", msg.err)
 		} else {
 			m.config = msg.config
-			m.status = "Config reloaded"
+			m.status = "config reloaded"
 		}
 		return m, nil
 
@@ -163,7 +181,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "r":
 					if !m.refreshing {
 						m.refreshing = true
-						m.status = "Refreshing..."
+						m.status = "refreshing..."
 						select {
 						case m.refreshChan <- struct{}{}:
 						default:
@@ -244,29 +262,29 @@ func openConfigInEditor(cfg Config) tea.Cmd {
 func (m Model) View() string {
 	var b strings.Builder
 
+	baseStyle := lipgloss.NewStyle().Background(bgColor)
+
+	nameW := 35
+	localW := 3
+	ownerW := 20
+
+	if m.width > 0 {
+		nameW = clamp(m.width/2-10, 20, 50)
+		ownerW = clamp(m.width/4, 10, 25)
+	}
+
 	b.WriteString(titleStyle.Render("fuzzyrepo"))
 	b.WriteString("\n\n")
 
-	ownerW := 20
-	nameW := 30
-	localW := 5
-	sepW := 3
-
-	if m.width > 0 {
-		ownerW = clamp(m.width/4, 10, 25)
-		nameW = clamp(m.width/3, 15, 40)
-	}
-
-	b.WriteString(headerStyle.Render(
-		padOrTrim("OWNER", ownerW) + " | " + padOrTrim("NAME", nameW) + " | " + padOrTrim("LOCAL", localW),
-	))
-	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(strings.Repeat("─", min(m.width, ownerW+nameW+localW+2*sepW))))
+	header := headerStyle.Render(
+		padOrTrim("REPO", nameW) + "  " + padOrTrim("LOCAL", localW),
+	)
+	b.WriteString(header)
 	b.WriteString("\n")
 
-	maxRows := m.height - 9
-	if maxRows < 3 {
-		maxRows = 3
+	maxRows := 8
+	if m.height > 0 {
+		maxRows = clamp(m.height-8, 5, 15)
 	}
 
 	start := 0
@@ -276,40 +294,58 @@ func (m Model) View() string {
 	end := min(len(m.results), start+maxRows)
 
 	if len(m.results) == 0 {
-		b.WriteString(dimStyle.Render("No matches"))
+		b.WriteString(dimStyle.Render("no matches"))
 		b.WriteString("\n")
 	} else {
 		for i := start; i < end; i++ {
 			r := m.results[i]
-			localStr := "no"
+
+			localStr := "·"
+			localStyled := localNoStyle.Render(localStr)
 			if r.ExistsLocal {
-				localStr = "yes"
+				localStr = "✓"
+				localStyled = localYesStyle.Render(localStr)
 			}
-			row := padOrTrim(r.Owner, ownerW) +
-				" | " + padOrTrim(r.Name, nameW) +
-				" | " + padOrTrim(localStr, localW)
+
+			namePart := repoNameStyle.Render(padOrTrim(r.Name, nameW-ownerW-2))
+			ownerPart := ownerStyle.Render(padOrTrim(r.Owner, ownerW))
+
+			nameCell := namePart + "  " + ownerPart
+
+			row := nameCell + "  " + localStyled
 
 			if i == m.cursor {
-				b.WriteString(selectedRow.Render(row))
-			} else {
-				b.WriteString(row)
+				row = cursorStyle.Width(m.width).Render(
+					padOrTrim(r.Name, nameW-ownerW-2) + "  " +
+						padOrTrim(r.Owner, ownerW) + "  " + localStr,
+				)
 			}
+
+			b.WriteString(row)
 			b.WriteString("\n")
 		}
 	}
 
-	b.WriteString("\n")
-
-	if m.refreshing {
-		b.WriteString(dimStyle.Render("refreshing..."))
+	for i := end - start; i < maxRows; i++ {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(dimStyle.Render(m.status))
 	b.WriteString("\n")
-	b.WriteString("> " + m.query)
+	b.WriteString(promptStyle.Render("> ") + queryStyle.Render(m.query))
+	if m.query == "" {
+		b.WriteString(dimStyle.Render("type to search"))
+	}
+	b.WriteString("\n\n")
 
-	return b.String()
+	if m.status != "" {
+		b.WriteString(dimStyle.Render(m.status))
+		b.WriteString("\n")
+	}
+
+	keybinds := "↑↓ navigate  enter open  y copy  r refresh  , config  q quit"
+	b.WriteString(keybindStyle.Render(keybinds))
+
+	return baseStyle.Render(b.String())
 }
 
 func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}) (*Repository, Action) {
