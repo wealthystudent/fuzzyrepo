@@ -35,7 +35,7 @@ release:
     name: fuzzyrepo
 
 brews:
-  - name: yourtool
+  - name: fuzzyrepo
     homepage: "https://github.com/wealthystudent/fuzzyrepo"
     description: "TUI tool for searching remote and local repositories"
     license: "MIT"
@@ -43,6 +43,7 @@ brews:
       owner: wealthystudent
       name: homebrew-tap
       branch: main
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     directory: Formula
     install: |
       bin.install "fuzzyrepo"
