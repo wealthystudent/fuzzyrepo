@@ -15,7 +15,7 @@ A fast TUI for fuzzy searching GitHub (remote) + local repositories, with clone/
 ## Installation
 
 ```bash
-brew install tap/wealthystudent/fuzzyrepo
+brew install wealthystudent/tap/fuzzyrepo
 ```
 
 Prereqs:
