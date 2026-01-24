@@ -15,7 +15,8 @@ A fast TUI for fuzzy searching GitHub (remote) + local repositories, with clone/
 ## Installation
 
 ```bash
-go install github.com/wealthystudent/fuzzyrepo@latest
+go build .
+go install
 ```
 
 Prereqs:
@@ -58,6 +59,7 @@ Notes:
 - `repo_roots` is a YAML list of absolute paths.
 - `clone_root` must be an absolute path.
 - Clone destination is `<clone_root>/<owner>/<repo>`.
+- Alias proposal: `frp`
 
 ## Usage
 
