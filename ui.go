@@ -362,7 +362,7 @@ func (m *Model) applySearch() {
 	for _, mt := range matches {
 		repo := m.all[mt.Index]
 		usageBoost := GetUsageBoost(m.usage, repo)
-		combined := float64(mt.Score) + usageBoost*10
+		combined := float64(mt.Score) + usageBoost*50
 		scored = append(scored, scoredRepo{
 			repo:       repo,
 			fuzzyScore: mt.Score,
