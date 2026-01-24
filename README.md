@@ -18,8 +18,6 @@ A fast TUI for fuzzy searching GitHub (remote) + local repositories, with clone/
 go install github.com/wealthystudent/fuzzyrepo@latest
 ```
 
-Note: if this is a private repo, `go install` needs Git credentials (or SSH) that can access `github.com/wealthystudent/fuzzyrepo`.
-
 Prereqs:
 
 - `git`
