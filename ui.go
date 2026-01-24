@@ -32,13 +32,10 @@ var (
 			Background(lipgloss.Color("#1a1a1a"))
 
 	headerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#555555"))
+			Foreground(lipgloss.Color("212"))
 
 	dimStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#444444"))
-
-	titleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("212"))
 
 	keybindStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#333333"))
@@ -52,14 +49,11 @@ var (
 	configLabelStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#888888"))
 
-	configInputStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#ffffff"))
-
-	configModalStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("#444444")).
-				Padding(1, 2).
-				Background(lipgloss.Color("#111111"))
+	overlayStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#333333")).
+			Padding(0, 1).
+			Background(bgColor)
 )
 
 type reposUpdatedMsg []Repository
@@ -493,13 +487,6 @@ func (m Model) View() string {
 }
 
 func (m Model) viewConfig() string {
-	var b strings.Builder
-
-	b.WriteString(titleStyle.Render("fuzzyrepo"))
-	b.WriteString(" ")
-	b.WriteString(dimStyle.Render("config"))
-	b.WriteString("\n\n")
-
 	labels := []string{
 		"repo_roots",
 		"clone_root",
@@ -507,16 +494,28 @@ func (m Model) viewConfig() string {
 		"github.orgs",
 	}
 
+	var lines []string
+	lines = append(lines, dimStyle.Render("Config"))
+	lines = append(lines, "")
+
 	for i, label := range labels {
-		b.WriteString(configLabelStyle.Render(fmt.Sprintf("%-20s", label)))
-		b.WriteString(m.inputs[i].View())
-		b.WriteString("\n")
+		line := configLabelStyle.Render(fmt.Sprintf("%-20s", label)) + m.inputs[i].View()
+		lines = append(lines, line)
 	}
 
-	b.WriteString("\n")
-	b.WriteString(keybindStyle.Render("tab/↑↓ navigate   enter save   esc cancel"))
+	lines = append(lines, "")
+	lines = append(lines, dimStyle.Render("tab/↑↓ navigate   enter save   esc cancel"))
 
-	return configModalStyle.Render(b.String())
+	configBox := overlayStyle.Render(strings.Join(lines, "\n"))
+
+	baseStyle := lipgloss.NewStyle().
+		Background(bgColor).
+		Width(m.width).
+		Height(m.height)
+
+	mainRendered := baseStyle.Render("")
+
+	return m.overlayCenter(mainRendered, configBox)
 }
 
 func (m Model) viewMain() string {
@@ -534,9 +533,6 @@ func (m Model) viewMain() string {
 			nameW = 15
 		}
 	}
-
-	b.WriteString(titleStyle.Render("fuzzyrepo"))
-	b.WriteString("\n\n")
 
 	header := headerStyle.Render(
 		padOrTrim("REPO", nameW) + "  " + padOrTrim("LOCAL", localW) + "  " + padOrTrim("OWNER", ownerW),
@@ -591,17 +587,21 @@ func (m Model) viewMain() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(promptStyle.Render("> ") + queryStyle.Render(m.query))
-	if m.query == "" {
-		b.WriteString(dimStyle.Render("type to search"))
-	}
-	b.WriteString("\n\n")
 
-	if m.status != "" {
-		b.WriteString(dimStyle.Render(m.status))
-		b.WriteString("  ")
+	searchLeft := promptStyle.Render("> ") + queryStyle.Render(m.query)
+	if m.query == "" {
+		searchLeft += dimStyle.Render("type to search")
 	}
-	b.WriteString(keybindStyle.Render("space commands"))
+
+	hints := keybindStyle.Render("space=commands  enter=open")
+	searchLeftWidth := lipgloss.Width(searchLeft)
+	hintsWidth := lipgloss.Width(hints)
+	padding := m.width - searchLeftWidth - hintsWidth
+	if padding < 2 {
+		padding = 2
+	}
+
+	b.WriteString(searchLeft + strings.Repeat(" ", padding) + hints)
 
 	mainContent := b.String()
 
@@ -688,20 +688,20 @@ func stripAnsi(s string) string {
 func (m Model) buildCommandBox() string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#444444")).
+		BorderForeground(lipgloss.Color("#333333")).
 		Padding(0, 1).
-		Background(lipgloss.Color("#111111"))
+		Background(lipgloss.Color("#0a0a0a"))
 
-	titleStyle := lipgloss.NewStyle().
+	cmdTitleStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#666666")).
 		MarginBottom(1)
 
 	keyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#666666")).
+		Foreground(lipgloss.Color("#555555")).
 		Width(3)
 
 	nameStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#888888"))
+		Foreground(lipgloss.Color("#666666"))
 
 	selectedKeyStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#ffffff")).
@@ -709,11 +709,11 @@ func (m Model) buildCommandBox() string {
 
 	selectedNameStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#ffffff")).
-		Background(lipgloss.Color("#333333"))
+		Background(lipgloss.Color("#222222"))
 
 	cmds := m.getCommands()
 	var lines []string
-	lines = append(lines, titleStyle.Render("Commands"))
+	lines = append(lines, cmdTitleStyle.Render("Commands"))
 
 	for i, cmd := range cmds {
 		if i == m.commandCursor {
