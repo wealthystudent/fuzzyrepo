@@ -4,16 +4,11 @@ A fast TUI for fuzzy searching GitHub (remote) + local repositories, with clone/
 
 ## Features
 
-- Fuzzy search across remote GitHub repos and local repos
+- Fuzzy search across remote GitHub repos and local repos (all keys go to search)
+- Command palette (`Space`) for actions - keeps search uninterrupted
 - Marks whether a repo already exists locally
 - `Enter` opens the repo (clones first if needed)
-- `y` copies the local path (clones first if needed) via OSC52
-- `b` opens the repo in your browser
-- `p` opens the repo's pull requests page
-- `r` refreshes the repo cache (remote + local)
-- `,` opens config editor
-- `?` toggles help overlay
-- Progressive loading: local repos appear instantly, GitHub repos stream in batches
+- Progressive loading: cached repos appear instantly, GitHub repos stream in batches
 - Frecency-based ranking: frequently/recently used repos appear first
 - Neovim integration via a lightweight floating-terminal plugin
 
@@ -75,14 +70,23 @@ Keybinds:
 
 | Key | Action |
 | --- | --- |
-| ↑ / ↓ | Navigate |
-| Enter | Open (clone if needed) |
-| y | Copy local path (clone if needed) |
+| ↑ / ↓ | Navigate repos |
+| Enter | Open selected repo (clone if needed) |
+| Esc | Clear search / Quit |
+| Space | Open command palette |
+
+### Command Palette
+
+Press `Space` to open the command palette, then use arrows to navigate or press the shortcut key:
+
+| Key | Command |
+| --- | --- |
+| o | Open in editor |
+| y | Copy local path |
 | b | Open in browser |
 | p | Open pull requests |
 | r | Refresh |
-| , | Edit config |
-| ? | Toggle help |
+| c | Config |
 | q | Quit |
 
 ## Neovim plugin
