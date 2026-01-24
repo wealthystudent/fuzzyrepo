@@ -15,9 +15,7 @@ A fast TUI for fuzzy searching GitHub (remote) + local repositories, with clone/
 ## Installation
 
 ```bash
-git clone git@github.com:wealthystudent/fuzzyrepo.git
-go build .
-go install
+brew install tap/wealthystudent/fuzzyrepo
 ```
 
 Prereqs:
