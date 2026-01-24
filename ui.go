@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -87,6 +88,7 @@ type Model struct {
 	all     []Repository
 	query   string
 	results []Repository
+	usage   UsageData
 
 	cursor int
 
@@ -108,10 +110,13 @@ type Model struct {
 }
 
 func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Model {
+	usage, _ := LoadUsage()
+
 	m := Model{
 		all:         all,
 		query:       "",
 		config:      config,
+		usage:       usage,
 		refreshChan: refreshChan,
 		inputs:      make([]textinput.Model, cfgFieldCount),
 	}
@@ -334,7 +339,7 @@ func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) applySearch() {
 	q := strings.TrimSpace(m.query)
 	if q == "" {
-		m.results = m.all
+		m.results = SortByUsage(m.all, m.usage)
 		m.cursor = 0
 		return
 	}
@@ -345,12 +350,36 @@ func (m *Model) applySearch() {
 	}
 
 	matches := fuzzy.Find(q, haystack)
-	out := make([]Repository, 0, len(matches))
-	for _, mt := range matches {
-		out = append(out, m.all[mt.Index])
+
+	type scoredRepo struct {
+		repo       Repository
+		fuzzyScore int
+		usageBoost float64
+		combined   float64
 	}
 
-	m.results = out
+	scored := make([]scoredRepo, 0, len(matches))
+	for _, mt := range matches {
+		repo := m.all[mt.Index]
+		usageBoost := GetUsageBoost(m.usage, repo)
+		combined := float64(mt.Score) + usageBoost*10
+		scored = append(scored, scoredRepo{
+			repo:       repo,
+			fuzzyScore: mt.Score,
+			usageBoost: usageBoost,
+			combined:   combined,
+		})
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].combined > scored[j].combined
+	})
+
+	m.results = make([]Repository, 0, len(scored))
+	for _, s := range scored {
+		m.results = append(m.results, s.repo)
+	}
+
 	if m.cursor >= len(m.results) {
 		m.cursor = max(0, len(m.results)-1)
 	}

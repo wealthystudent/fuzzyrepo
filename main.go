@@ -76,6 +76,8 @@ func executeAction(repo *Repository, action Action, config Config) {
 			os.Exit(1)
 		}
 
+		_ = RecordUsage(*repo)
+
 	case ActionCopy:
 		localPath, err := EnsureLocal(*repo, config)
 		if err != nil && !errors.Is(err, ErrAlreadyExists) {
@@ -85,5 +87,7 @@ func executeAction(repo *Repository, action Action, config Config) {
 
 		CopyToClipboard(localPath)
 		fmt.Println("Copied to clipboard:", localPath)
+
+		_ = RecordUsage(*repo)
 	}
 }
