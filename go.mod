@@ -1,4 +1,4 @@
-module fuzzyrepo
+module github.com/wealthystudent/fuzzyrepo
 
 go 1.25.5
 

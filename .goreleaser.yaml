@@ -1,0 +1,50 @@
+version: 2
+
+project_name: fuzzyrepo
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: fuzzyrepo
+    binary: fuzzyrepo
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README*
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: wealthystudent
+    name: fuzzyrepo
+
+brews:
+  - name: yourtool
+    homepage: "https://github.com/wealthystudent/fuzzyrepo"
+    description: "TUI tool for searching remote and local repositories"
+    license: "MIT"
+    repository:
+      owner: wealthystudent
+      name: homebrew-tap
+      branch: main
+    directory: Formula
+    install: |
+      bin.install "fuzzyrepo"
+    test: |
+      system "#{bin}/fuzzyrepo", "--help"
