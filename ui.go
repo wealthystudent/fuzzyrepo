@@ -593,7 +593,7 @@ func (m Model) viewMain() string {
 		searchLeft += dimStyle.Render("type to search")
 	}
 
-	hints := keybindStyle.Render("space=commands  enter=open")
+	hints := keybindStyle.Render("space: commands  enter: open")
 	searchLeftWidth := lipgloss.Width(searchLeft)
 	hintsWidth := lipgloss.Width(hints)
 	padding := m.width - searchLeftWidth - hintsWidth
