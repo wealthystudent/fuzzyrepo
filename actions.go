@@ -21,15 +21,14 @@ func CloneRepo(repo Repository, config Config) (string, error) {
 	}
 
 	cloneRoot := config.GetCloneRoot()
-	destPath := filepath.Join(cloneRoot, repo.Owner, repo.Name)
+	destPath := filepath.Join(cloneRoot, repo.Name)
 
 	if _, err := os.Stat(destPath); err == nil {
 		return destPath, ErrAlreadyExists
 	}
 
-	parentDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(parentDir, 0o755); err != nil {
-		return "", fmt.Errorf("create parent dir: %w", err)
+	if err := os.MkdirAll(cloneRoot, 0o755); err != nil {
+		return "", fmt.Errorf("create clone root: %w", err)
 	}
 
 	cloneURL := repo.SSHURL
@@ -60,6 +59,7 @@ func OpenInEditor(path, repoName string) error {
 	}
 
 	cmd := exec.Command(editor, path)
+	cmd.Dir = path
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
