@@ -96,31 +96,7 @@ func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg, existingRepos []Re
 
 	_ = os.MkdirAll(cacheDir, 0o755)
 
-	currentRepos := make(map[string]Repository)
-	for _, r := range existingRepos {
-		key := strings.ToLower(r.FullName)
-		currentRepos[key] = r
-	}
-
 	localRepos := indexLocalRepos(config.GetRepoRoots())
-	for _, r := range localRepos {
-		key := strings.ToLower(r.FullName)
-		if existing, ok := currentRepos[key]; ok {
-			existing.LocalPath = r.LocalPath
-			existing.ExistsLocal = true
-			existing.ComputeSearchText()
-			currentRepos[key] = existing
-		} else {
-			currentRepos[key] = r
-		}
-	}
-
-	localOnlyKeys := make(map[string]bool)
-	for _, r := range localRepos {
-		localOnlyKeys[strings.ToLower(r.FullName)] = true
-	}
-
-	uiMsgs <- reposUpdatedMsg(mapToSlice(currentRepos))
 
 	githubClient, err := getGithubClient(ctx)
 	if err != nil {
@@ -129,44 +105,18 @@ func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg, existingRepos []Re
 		return
 	}
 
-	batchCh := make(chan []Repository)
-	var fetchErr error
-
-	remoteKeys := make(map[string]bool)
-
-	go func() {
-		fetchErr = streamRemoteRepositories(ctx, githubClient, config, batchCh)
-	}()
-
-	for batch := range batchCh {
-		for _, r := range batch {
-			key := strings.ToLower(r.FullName)
-			remoteKeys[key] = true
-
-			if existing, ok := currentRepos[key]; ok {
-				r.LocalPath = existing.LocalPath
-				r.ExistsLocal = existing.ExistsLocal
-				r.ComputeSearchText()
-			}
-			currentRepos[key] = r
-		}
-		uiMsgs <- reposUpdatedMsg(mapToSlice(currentRepos))
+	remoteRepos, err := getRemoteRepositories(ctx, githubClient, config)
+	if err != nil {
+		uiMsgs <- errorMsg{err: err}
+		uiMsgs <- refreshFinishedMsg{}
+		return
 	}
 
-	for key := range currentRepos {
-		if !remoteKeys[key] && !localOnlyKeys[key] {
-			delete(currentRepos, key)
-		}
-	}
+	merged := mergeRepos(localRepos, remoteRepos)
 
-	if fetchErr != nil {
-		uiMsgs <- errorMsg{err: fetchErr}
-	}
+	uiMsgs <- reposUpdatedMsg(merged)
 
-	final := mapToSlice(currentRepos)
-	uiMsgs <- reposUpdatedMsg(final)
-
-	b, err := json.MarshalIndent(final, "", "  ")
+	b, err := json.MarshalIndent(merged, "", "  ")
 	if err == nil {
 		tmpPath := path + ".tmp"
 		if err := os.WriteFile(tmpPath, b, 0o644); err == nil {

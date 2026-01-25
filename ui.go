@@ -13,44 +13,77 @@ import (
 )
 
 var (
-	bgColor = lipgloss.Color("#0a0a0a")
+	bgColor       = lipgloss.Color("#0a0a0a")
+	cursorBgColor = lipgloss.Color("#1a1a1a")
+)
+
+var (
+	bgOnlyStyle = lipgloss.NewStyle().
+			Background(bgColor)
 
 	repoNameStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#666666"))
+			Foreground(lipgloss.Color("#666666")).
+			Background(bgColor)
 
 	ownerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#444444"))
+			Foreground(lipgloss.Color("#444444")).
+			Background(bgColor)
 
 	localYesStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#325555"))
+			Foreground(lipgloss.Color("#325555")).
+			Background(bgColor)
 
 	localNoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#913333"))
+			Foreground(lipgloss.Color("#913333")).
+			Background(bgColor)
 
 	cursorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffffff"))
+			Foreground(lipgloss.Color("#ffffff")).
+			Background(cursorBgColor)
+
+	cursorSepStyle = lipgloss.NewStyle().
+			Background(cursorBgColor)
+
+	localYesCursorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#325555")).
+				Background(cursorBgColor)
+
+	localNoCursorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#913333")).
+				Background(cursorBgColor)
 
 	headerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("212"))
+			Foreground(lipgloss.Color("212")).
+			Background(bgColor)
 
 	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#984444"))
+			Foreground(lipgloss.Color("#444444")).
+			Background(bgColor)
 
 	keybindStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#333333"))
+			Foreground(lipgloss.Color("#F9FFAF")).
+			Background(bgColor)
+
+	inputText = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#00CECD")).
+			Background(bgColor)
 
 	promptStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#666666"))
+			Foreground(lipgloss.Color("#666666")).
+			Background(bgColor)
 
 	queryStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffffff"))
+			Foreground(lipgloss.Color("#ffffff")).
+			Background(bgColor)
 
 	configLabelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#888888"))
+				Foreground(lipgloss.Color("#888888")).
+				Background(bgColor)
 
 	overlayStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#333333")).
+			BorderBackground(bgColor).
 			Padding(0, 1).
 			Background(bgColor)
 )
@@ -84,8 +117,7 @@ type Model struct {
 	query   string
 	results []Repository
 	usage   UsageData
-
-	cursor int
+	cursor  int
 
 	status     string
 	refreshing bool
@@ -130,6 +162,10 @@ func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Mode
 		ti := textinput.New()
 		ti.CharLimit = 500
 		ti.Width = 50
+		ti.TextStyle = lipgloss.NewStyle().Background(bgColor).Foreground(lipgloss.Color("#ffffff"))
+		ti.PlaceholderStyle = lipgloss.NewStyle().Background(bgColor).Foreground(lipgloss.Color("#444444"))
+		ti.PromptStyle = lipgloss.NewStyle().Background(bgColor)
+		ti.Cursor.Style = lipgloss.NewStyle().Background(bgColor)
 		m.inputs[i] = ti
 	}
 
@@ -142,43 +178,6 @@ func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Mode
 	return m
 }
 
-func (m *Model) loadConfigIntoInputs() {
-	m.inputs[cfgRepoRoots].SetValue(strings.Join(m.config.RepoRoots, ", "))
-	m.inputs[cfgCloneRoot].SetValue(m.config.CloneRoot)
-	m.inputs[cfgAffiliation].SetValue(m.config.GitHub.Affiliation)
-	m.inputs[cfgOrgs].SetValue(m.config.GitHub.Orgs)
-}
-
-func (m *Model) saveConfigFromInputs() error {
-	var repoRoots []string
-	for _, p := range strings.Split(m.inputs[cfgRepoRoots].Value(), ",") {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			repoRoots = append(repoRoots, p)
-		}
-	}
-
-	cfg := Config{
-		RepoRoots: repoRoots,
-		CloneRoot: m.inputs[cfgCloneRoot].Value(),
-		GitHub: GitHubConfig{
-			Affiliation: m.inputs[cfgAffiliation].Value(),
-			Orgs:        m.inputs[cfgOrgs].Value(),
-		},
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
-
-	if err := SaveConfig(cfg); err != nil {
-		return err
-	}
-
-	m.config = cfg
-	return nil
-}
-
 func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -188,13 +187,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m.updateMain(msg)
 }
 
+func (m Model) View() string {
+	return m.viewMain()
+}
+
 func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyEsc:
 			m.showConfig = false
-			m.status = "config cancelled"
 			return m, nil
 
 		case tea.KeyEnter:
@@ -400,123 +402,6 @@ func (m Model) updateCommands(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) getCommands() []command {
-	return []command{
-		{key: "o", name: "open in editor", action: ActionOpen},
-		{key: "y", name: "copy path", action: ActionCopy},
-		{key: "b", name: "open in browser", action: ActionBrowse},
-		{key: "p", name: "open pull requests", action: ActionPRs},
-		{key: "r", name: "refresh", fn: func(m *Model) {
-			if !m.refreshing {
-				m.refreshing = true
-				m.status = "refreshing..."
-				select {
-				case m.refreshChan <- struct{}{}:
-				default:
-				}
-			}
-		}},
-		{key: "c", name: "config", fn: func(m *Model) {
-			m.showConfig = true
-			m.configFocus = 0
-			m.loadConfigIntoInputs()
-			for i := range m.inputs {
-				m.inputs[i].Blur()
-			}
-			m.inputs[0].Focus()
-		}},
-		{key: "q", name: "quit", action: ActionQuit},
-	}
-}
-
-func (m *Model) applySearch() {
-	q := strings.TrimSpace(m.query)
-	if q == "" {
-		m.results = SortByUsage(m.all, m.usage)
-		m.cursor = 0
-		return
-	}
-
-	haystack := make([]string, 0, len(m.all))
-	for _, r := range m.all {
-		haystack = append(haystack, r.SearchText)
-	}
-
-	matches := fuzzy.Find(q, haystack)
-
-	type scoredRepo struct {
-		repo       Repository
-		fuzzyScore int
-		usageBoost float64
-		combined   float64
-	}
-
-	scored := make([]scoredRepo, 0, len(matches))
-	for _, mt := range matches {
-		repo := m.all[mt.Index]
-		usageBoost := GetUsageBoost(m.usage, repo)
-		combined := float64(mt.Score) + usageBoost*50
-		scored = append(scored, scoredRepo{
-			repo:       repo,
-			fuzzyScore: mt.Score,
-			usageBoost: usageBoost,
-			combined:   combined,
-		})
-	}
-
-	sort.SliceStable(scored, func(i, j int) bool {
-		return scored[i].combined > scored[j].combined
-	})
-
-	m.results = make([]Repository, 0, len(scored))
-	for _, s := range scored {
-		m.results = append(m.results, s.repo)
-	}
-
-	if m.cursor >= len(m.results) {
-		m.cursor = max(0, len(m.results)-1)
-	}
-}
-
-func (m Model) View() string {
-	if m.showConfig {
-		return m.viewConfig()
-	}
-	return m.viewMain()
-}
-
-func (m Model) viewConfig() string {
-	labels := []string{
-		"repo_roots",
-		"clone_root",
-		"github.affiliation",
-		"github.orgs",
-	}
-
-	var lines []string
-	lines = append(lines, dimStyle.Render("Config"))
-	lines = append(lines, "")
-
-	for i, label := range labels {
-		line := configLabelStyle.Render(fmt.Sprintf("%-20s", label)) + m.inputs[i].View()
-		lines = append(lines, line)
-	}
-
-	lines = append(lines, "")
-	lines = append(lines, dimStyle.Render("tab/↑↓ navigate   enter save   esc cancel"))
-
-	configBox := overlayStyle.Render(strings.Join(lines, "\n"))
-
-	baseStyle := lipgloss.NewStyle().
-		Background(bgColor).
-		Width(m.width).
-		Height(m.height)
-
-	mainRendered := baseStyle.Render("")
-
-	return m.overlayCenter(mainRendered, configBox)
-}
-
 func (m Model) viewMain() string {
 	var b strings.Builder
 
@@ -528,29 +413,41 @@ func (m Model) viewMain() string {
 	if m.width > 0 {
 		ownerW = clamp(m.width/4, 10, 30)
 		nameW = m.width - ownerW - localW - separators
-		if nameW < 15 {
-			nameW = 15
-		}
+		nameW = max(15, nameW)
 	}
 
-	header := headerStyle.Render(
-		padOrTrim("REPO", nameW) + "  " + padOrTrim("LOCAL", localW) + "  " + padOrTrim("OWNER", ownerW),
-	)
+	sep := bgOnlyStyle.Render("  ")
+
+	header := headerStyle.Render(padOrTrim("REPO", nameW)) + sep +
+		headerStyle.Render(padOrTrim("LOCAL", localW)) + sep +
+		headerStyle.Render(padOrTrim("OWNER", ownerW))
 	b.WriteString(header)
-	b.WriteString(dimStyle.Render(strings.Repeat("─", m.width)) + "\n")
+	b.WriteString("\n")
 
 	maxRows := 8
 	if m.height > 0 {
-		maxRows = max(5, m.height-8)
+		maxRows = max(5, m.height-6)
 	}
 
-	start := 0
-	if m.cursor >= maxRows {
-		start = m.cursor - maxRows + 1
+	total := len(m.results)
+	end := total
+	start := max(0, end-maxRows)
+	if m.cursor < start {
+		start = m.cursor
+		end = min(total, start+maxRows)
 	}
-	end := min(len(m.results), start+maxRows)
+	if m.cursor >= end {
+		end = m.cursor + 1
+		start = max(0, end-maxRows)
+	}
 
-	if len(m.results) == 0 {
+	for i := 0; i < maxRows-(end-start); i++ {
+		b.WriteString("\n")
+	}
+
+	overlayOpen := m.showCommands || m.showConfig
+
+	if total == 0 {
 		b.WriteString(dimStyle.Render("no matches"))
 		b.WriteString("\n")
 	} else {
@@ -564,35 +461,34 @@ func (m Model) viewMain() string {
 				localStyled = localYesStyle.Render(padOrTrim(localText, localW))
 			}
 
-			if i == m.cursor {
-				row := cursorStyle.Render(
-					padOrTrim(r.Name, nameW) + "  " +
-						padOrTrim(localText, localW) + "  " +
-						padOrTrim(r.Owner, ownerW),
-				)
-				b.WriteString(row)
+			if i == m.cursor && !overlayOpen {
+				cursorSep := cursorSepStyle.Render("  ")
+				namePart := cursorStyle.Render(padOrTrim(r.Name, nameW))
+				ownerPart := cursorStyle.Render(padOrTrim(r.Owner, ownerW))
+
+				localPart := localNoCursorStyle.Render(padOrTrim(localText, localW))
+				if r.ExistsLocal {
+					localPart = localYesCursorStyle.Render(padOrTrim(localText, localW))
+				}
+
+				b.WriteString(namePart + cursorSep + localPart + cursorSep + ownerPart)
 			} else {
 				namePart := repoNameStyle.Render(padOrTrim(r.Name, nameW))
 				ownerPart := ownerStyle.Render(padOrTrim(r.Owner, ownerW))
-				row := namePart + "  " + localStyled + "  " + ownerPart
-				b.WriteString(row)
+				b.WriteString(namePart + sep + localStyled + sep + ownerPart)
 			}
 			b.WriteString("\n")
 		}
-	}
-
-	for i := end - start; i < maxRows; i++ {
-		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
 
 	searchLeft := promptStyle.Render("> ") + queryStyle.Render(m.query)
 	if m.query == "" {
-		searchLeft += dimStyle.Render("type to search")
+		searchLeft += inputText.Render("type to search")
 	}
 
-	hints := keybindStyle.Render("space: commands  enter: open")
+	hints := keybindStyle.Render("space commands  enter open  ")
 	searchLeftWidth := lipgloss.Width(searchLeft)
 	hintsWidth := lipgloss.Width(hints)
 	padding := m.width - searchLeftWidth - hintsWidth
@@ -600,23 +496,85 @@ func (m Model) viewMain() string {
 		padding = 2
 	}
 
-	b.WriteString(searchLeft + strings.Repeat(" ", padding) + hints)
+	b.WriteString(searchLeft + bgOnlyStyle.Render(strings.Repeat(" ", padding)) + hints)
 
 	mainContent := b.String()
-
 	baseStyle := lipgloss.NewStyle().
 		Background(bgColor).
 		Width(m.width).
 		Height(m.height)
-
 	mainRendered := baseStyle.Render(mainContent)
 
+	if m.showConfig {
+		return m.overlayCenter(mainRendered, m.buildConfigBox())
+	}
 	if m.showCommands {
-		commandBox := m.buildCommandBox()
-		return m.overlayCenter(mainRendered, commandBox)
+		return m.overlayCenter(mainRendered, m.buildCommandBox())
 	}
 
 	return mainRendered
+}
+
+func (m Model) buildCommandBox() string {
+	keyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#555555")).
+		Background(bgColor).
+		Width(3)
+
+	nameStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#666666")).
+		Background(bgColor)
+
+	selectedKeyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#ffffff")).
+		Background(bgColor).
+		Width(3)
+
+	selectedNameStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#ffffff")).
+		Background(bgColor)
+
+	cmds := m.getCommands()
+	var lines []string
+	lines = append(lines, inputText.Render("Commands"))
+
+	for i, cmd := range cmds {
+		if i == m.commandCursor {
+			line := selectedKeyStyle.Render(cmd.key) + bgOnlyStyle.Render(" ") + selectedNameStyle.Render(cmd.name)
+			lines = append(lines, line)
+		} else {
+			line := keyStyle.Render(cmd.key) + bgOnlyStyle.Render(" ") + nameStyle.Render(cmd.name)
+			lines = append(lines, line)
+		}
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, keybindStyle.Render("↑↓ navigate  enter select  esc close"))
+
+	return overlayStyle.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) buildConfigBox() string {
+	labels := []string{
+		"repo_roots",
+		"clone_root",
+		"github.affiliation",
+		"github.orgs",
+	}
+
+	var lines []string
+	lines = append(lines, inputText.Render("Config"))
+	lines = append(lines, "")
+
+	for i, label := range labels {
+		line := configLabelStyle.Render(fmt.Sprintf("%-20s", label)) + m.inputs[i].View()
+		lines = append(lines, line)
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, keybindStyle.Render("tab/↑↓ navigate   enter save   esc close"))
+
+	return overlayStyle.Render(strings.Join(lines, "\n"))
 }
 
 func (m Model) overlayCenter(base, overlay string) string {
@@ -659,10 +617,128 @@ func (m Model) overlayCenter(base, overlay string) string {
 			suffix = string(baseRunes[startCol+overlayW:])
 		}
 
-		baseLines[row] = prefix + overlayLine + suffix
+		lineW := lipgloss.Width(overlayLine)
+		if lineW < overlayW {
+			overlayLine += bgOnlyStyle.Render(strings.Repeat(" ", overlayW-lineW))
+		}
+
+		baseLines[row] = dimStyle.Render(prefix) + overlayLine + "\x1b[0m" + dimStyle.Render(suffix)
 	}
 
 	return strings.Join(baseLines, "\n")
+}
+
+func (m *Model) applySearch() {
+	q := strings.TrimSpace(m.query)
+	if q == "" {
+		m.results = SortByUsage(m.all, m.usage)
+		m.cursor = max(0, len(m.results)-1)
+		return
+	}
+
+	haystack := make([]string, 0, len(m.all))
+	for _, r := range m.all {
+		haystack = append(haystack, r.SearchText)
+	}
+
+	matches := fuzzy.Find(q, haystack)
+
+	type scoredRepo struct {
+		repo       Repository
+		fuzzyScore int
+		usageBoost float64
+		combined   float64
+	}
+
+	scored := make([]scoredRepo, 0, len(matches))
+	for _, mt := range matches {
+		repo := m.all[mt.Index]
+		usageBoost := GetUsageBoost(m.usage, repo)
+		combined := float64(mt.Score) + usageBoost*50
+		scored = append(scored, scoredRepo{
+			repo:       repo,
+			fuzzyScore: mt.Score,
+			usageBoost: usageBoost,
+			combined:   combined,
+		})
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].combined < scored[j].combined
+	})
+
+	m.results = make([]Repository, 0, len(scored))
+	for _, s := range scored {
+		m.results = append(m.results, s.repo)
+	}
+
+	m.cursor = max(0, len(m.results)-1)
+}
+
+func (m *Model) loadConfigIntoInputs() {
+	m.inputs[cfgRepoRoots].SetValue(strings.Join(m.config.RepoRoots, ", "))
+	m.inputs[cfgCloneRoot].SetValue(m.config.CloneRoot)
+	m.inputs[cfgAffiliation].SetValue(m.config.GitHub.Affiliation)
+	m.inputs[cfgOrgs].SetValue(m.config.GitHub.Orgs)
+}
+
+func (m *Model) saveConfigFromInputs() error {
+	var repoRoots []string
+	for _, p := range strings.Split(m.inputs[cfgRepoRoots].Value(), ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			repoRoots = append(repoRoots, p)
+		}
+	}
+
+	cfg := Config{
+		RepoRoots: repoRoots,
+		CloneRoot: m.inputs[cfgCloneRoot].Value(),
+		GitHub: GitHubConfig{
+			Affiliation: m.inputs[cfgAffiliation].Value(),
+			Orgs:        m.inputs[cfgOrgs].Value(),
+		},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+
+	if err := SaveConfig(cfg); err != nil {
+		return err
+	}
+
+	m.config = cfg
+	return nil
+}
+
+func (m *Model) getCommands() []command {
+	return []command{
+		{key: "o", name: "open in editor", action: ActionOpen},
+		{key: "y", name: "copy path", action: ActionCopy},
+		{key: "b", name: "open in browser", action: ActionBrowse},
+		{key: "p", name: "open pull requests", action: ActionPRs},
+		{key: "r", name: "refresh", fn: func(m *Model) {
+			if !m.refreshing {
+				m.refreshing = true
+				m.status = "refreshing..."
+				select {
+				case m.refreshChan <- struct{}{}:
+				default:
+				}
+			}
+		}},
+		{key: "c", name: "config", fn: func(m *Model) {
+			m.showConfig = true
+			m.configFocus = 0
+			m.loadConfigIntoInputs()
+			for i := range m.inputs {
+				m.inputs[i].Blur()
+			}
+			m.inputs[0].Focus()
+		}},
+		{key: "q", name: "quit", action: ActionQuit},
+	}
 }
 
 func stripAnsi(s string) string {
@@ -682,51 +758,6 @@ func stripAnsi(s string) string {
 		result.WriteRune(r)
 	}
 	return result.String()
-}
-
-func (m Model) buildCommandBox() string {
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#333333")).
-		Padding(0, 1).
-		Background(lipgloss.Color("#0a0a0a"))
-
-	cmdTitleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#666666")).
-		MarginBottom(1)
-
-	keyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#555555")).
-		Width(3)
-
-	nameStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#666666"))
-
-	selectedKeyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ffffff")).
-		Width(3)
-
-	selectedNameStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ffffff"))
-
-	cmds := m.getCommands()
-	var lines []string
-	lines = append(lines, cmdTitleStyle.Render("Commands"))
-
-	for i, cmd := range cmds {
-		if i == m.commandCursor {
-			line := selectedKeyStyle.Render(cmd.key) + " " + selectedNameStyle.Render(cmd.name)
-			lines = append(lines, line)
-		} else {
-			line := keyStyle.Render(cmd.key) + " " + nameStyle.Render(cmd.name)
-			lines = append(lines, line)
-		}
-	}
-
-	lines = append(lines, "")
-	lines = append(lines, dimStyle.Render("↑↓ navigate  enter select  esc close"))
-
-	return boxStyle.Render(strings.Join(lines, "\n"))
 }
 
 func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}) (*Repository, Action) {
