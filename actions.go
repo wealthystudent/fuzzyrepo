@@ -68,7 +68,7 @@ func OpenInEditor(path, repoName string) error {
 }
 
 func openInNeovim(path, repoName, nvimAddr string) error {
-	nvimCmd := fmt.Sprintf("<C-\\><C-n>:tabnew | tcd %s<CR>", path)
+	nvimCmd := fmt.Sprintf("<C-\\><C-n>:lua package.loaded['fuzzyrepo']=nil; require('fuzzyrepo').open_repo(%q)<CR>", path)
 	cmd := exec.Command("nvim", "--server", nvimAddr, "--remote-send", nvimCmd)
 	return cmd.Run()
 }
