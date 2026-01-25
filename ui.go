@@ -16,10 +16,10 @@ var (
 	bgColor = lipgloss.Color("#0a0a0a")
 
 	repoNameStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffffff"))
+			Foreground(lipgloss.Color("#666666"))
 
 	ownerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#555555"))
+			Foreground(lipgloss.Color("#444444"))
 
 	localYesStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#325555"))
@@ -28,14 +28,13 @@ var (
 			Foreground(lipgloss.Color("#913333"))
 
 	cursorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#888888")).
-			Background(lipgloss.Color("#1a1a1a"))
+			Foreground(lipgloss.Color("#ffffff"))
 
 	headerStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("212"))
 
 	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#444444"))
+			Foreground(lipgloss.Color("#984444"))
 
 	keybindStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#333333"))
@@ -538,7 +537,7 @@ func (m Model) viewMain() string {
 		padOrTrim("REPO", nameW) + "  " + padOrTrim("LOCAL", localW) + "  " + padOrTrim("OWNER", ownerW),
 	)
 	b.WriteString(header)
-	b.WriteString("\n")
+	b.WriteString(dimStyle.Render(strings.Repeat("─", m.width)) + "\n")
 
 	maxRows := 8
 	if m.height > 0 {
@@ -708,8 +707,7 @@ func (m Model) buildCommandBox() string {
 		Width(3)
 
 	selectedNameStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ffffff")).
-		Background(lipgloss.Color("#222222"))
+		Foreground(lipgloss.Color("#ffffff"))
 
 	cmds := m.getCommands()
 	var lines []string
