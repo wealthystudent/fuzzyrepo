@@ -17,10 +17,9 @@ type GitHubConfig struct {
 }
 
 type Config struct {
-	RepoRoots  []string     `yaml:"repo_roots"`
-	CloneRoot  string       `yaml:"clone_root"`
-	GitHub     GitHubConfig `yaml:"github"`
-	MaxResults int          `yaml:"max_results"`
+	RepoRoots []string     `yaml:"repo_roots"`
+	CloneRoot string       `yaml:"clone_root"`
+	GitHub    GitHubConfig `yaml:"github"`
 }
 
 func DefaultConfig() Config {
@@ -31,7 +30,6 @@ func DefaultConfig() Config {
 			Affiliation: "owner,collaborator,organization_member",
 			Orgs:        "",
 		},
-		MaxResults: 0,
 	}
 }
 
@@ -120,10 +118,6 @@ func SaveConfig(cfg Config) error {
 func (c Config) Validate() error {
 	if c.GitHub.Affiliation == "" {
 		return errors.New("github.affiliation cannot be empty")
-	}
-
-	if c.MaxResults < 0 {
-		return fmt.Errorf("max_results must be >= 0 (got %d)", c.MaxResults)
 	}
 
 	for _, root := range c.RepoRoots {

@@ -24,23 +24,13 @@ func main() {
 		log.Println("Warning: could not load repo cache:", err)
 	}
 
+	currentRepos := initial
+
 	go func() {
 		doRefresh := func() {
 			uiMsgs <- refreshStartedMsg{}
-
 			cfg, _ := LoadConfig()
-			err := updateRepoCache(cfg)
-			if err != nil {
-				log.Println("Warning: could not update repo cache:", err)
-			}
-
-			updated, err := loadRepoCache()
-			if err != nil {
-				log.Println("Warning: could not load repo cache:", err)
-			}
-
-			uiMsgs <- reposUpdatedMsg(updated)
-			uiMsgs <- refreshFinishedMsg{}
+			progressiveRefresh(cfg, uiMsgs, currentRepos)
 		}
 
 		doRefresh()
@@ -87,6 +77,22 @@ func executeAction(repo *Repository, action Action, config Config) {
 
 		CopyToClipboard(localPath)
 		fmt.Println("Copied to clipboard:", localPath)
+
+		_ = RecordUsage(*repo)
+
+	case ActionBrowse:
+		if err := OpenInBrowser(*repo); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to open browser:", err)
+			os.Exit(1)
+		}
+
+		_ = RecordUsage(*repo)
+
+	case ActionPRs:
+		if err := OpenPRs(*repo); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to open PRs:", err)
+			os.Exit(1)
+		}
 
 		_ = RecordUsage(*repo)
 	}

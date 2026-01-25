@@ -67,13 +67,57 @@ func getRemoteRepositories(ctx context.Context, githubClient *github.Client, cfg
 		}
 
 		opts.Page = resp.NextPage
-
-		if cfg.MaxResults > 0 && len(repos) >= cfg.MaxResults {
-			break
-		}
 	}
 
 	return repos, nil
+}
+
+func streamRemoteRepositories(ctx context.Context, githubClient *github.Client, cfg Config, batchCh chan<- []Repository) error {
+	defer close(batchCh)
+
+	opts := &github.RepositoryListOptions{
+		Visibility:  "all",
+		Affiliation: cfg.GitHub.Affiliation,
+		ListOptions: github.ListOptions{PerPage: 50},
+	}
+
+	for {
+		remoteRepos, resp, err := githubClient.Repositories.List(ctx, "", opts)
+		if err != nil {
+			return err
+		}
+
+		batch := make([]Repository, 0, len(remoteRepos))
+		for _, repo := range remoteRepos {
+			owner := repo.GetOwner().GetLogin()
+			name := repo.GetName()
+
+			r := Repository{
+				Owner:       owner,
+				Name:        name,
+				FullName:    owner + "/" + name,
+				SSHURL:      repo.GetSSHURL(),
+				LocalPath:   "",
+				ExistsLocal: false,
+			}
+			r.ComputeSearchText()
+			batch = append(batch, r)
+		}
+
+		select {
+		case batchCh <- batch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+
+		opts.Page = resp.NextPage
+	}
+
+	return nil
 }
 
 func cloneRepo(ctx context.Context, sshURL, localPath string) error {

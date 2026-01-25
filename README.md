@@ -8,8 +8,13 @@ A fast TUI for fuzzy searching GitHub (remote) + local repositories, with clone/
 - Marks whether a repo already exists locally
 - `Enter` opens the repo (clones first if needed)
 - `y` copies the local path (clones first if needed) via OSC52
+- `b` opens the repo in your browser
+- `p` opens the repo's pull requests page
 - `r` refreshes the repo cache (remote + local)
-- `,` opens your config in `$EDITOR`
+- `,` opens config editor
+- `?` toggles help overlay
+- Progressive loading: local repos appear instantly, GitHub repos stream in batches
+- Frecency-based ranking: frequently/recently used repos appear first
 - Neovim integration via a lightweight floating-terminal plugin
 
 ## Installation
@@ -49,8 +54,6 @@ clone_root: /abs/path/to/clone/root  # defaults to first repo_roots entry; else 
 github:
   affiliation: owner,collaborator,organization_member
   orgs: my-org,another-org  # optional filter (comma-separated)
-
-max_results: 200  # 0 = unlimited
 ```
 
 Notes:
@@ -75,8 +78,11 @@ Keybinds:
 | ↑ / ↓ | Navigate |
 | Enter | Open (clone if needed) |
 | y | Copy local path (clone if needed) |
+| b | Open in browser |
+| p | Open pull requests |
 | r | Refresh |
-| , | Edit config in `$EDITOR` |
+| , | Edit config |
+| ? | Toggle help |
 | q | Quit |
 
 ## Neovim plugin

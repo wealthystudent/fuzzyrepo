@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func getOs() string {
@@ -85,6 +87,102 @@ func updateRepoCache(config Config) error {
 		return err
 	}
 	return os.Rename(tmpPath, path)
+}
+
+func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg, existingRepos []Repository) {
+	ctx := context.Background()
+	cacheDir := getCacheDir()
+	path := getCachePath()
+
+	_ = os.MkdirAll(cacheDir, 0o755)
+
+	currentRepos := make(map[string]Repository)
+	for _, r := range existingRepos {
+		key := strings.ToLower(r.FullName)
+		currentRepos[key] = r
+	}
+
+	localRepos := indexLocalRepos(config.GetRepoRoots())
+	for _, r := range localRepos {
+		key := strings.ToLower(r.FullName)
+		if existing, ok := currentRepos[key]; ok {
+			existing.LocalPath = r.LocalPath
+			existing.ExistsLocal = true
+			existing.ComputeSearchText()
+			currentRepos[key] = existing
+		} else {
+			currentRepos[key] = r
+		}
+	}
+
+	localOnlyKeys := make(map[string]bool)
+	for _, r := range localRepos {
+		localOnlyKeys[strings.ToLower(r.FullName)] = true
+	}
+
+	uiMsgs <- reposUpdatedMsg(mapToSlice(currentRepos))
+
+	githubClient, err := getGithubClient(ctx)
+	if err != nil {
+		uiMsgs <- errorMsg{err: err}
+		uiMsgs <- refreshFinishedMsg{}
+		return
+	}
+
+	batchCh := make(chan []Repository)
+	var fetchErr error
+
+	remoteKeys := make(map[string]bool)
+
+	go func() {
+		fetchErr = streamRemoteRepositories(ctx, githubClient, config, batchCh)
+	}()
+
+	for batch := range batchCh {
+		for _, r := range batch {
+			key := strings.ToLower(r.FullName)
+			remoteKeys[key] = true
+
+			if existing, ok := currentRepos[key]; ok {
+				r.LocalPath = existing.LocalPath
+				r.ExistsLocal = existing.ExistsLocal
+				r.ComputeSearchText()
+			}
+			currentRepos[key] = r
+		}
+		uiMsgs <- reposUpdatedMsg(mapToSlice(currentRepos))
+	}
+
+	for key := range currentRepos {
+		if !remoteKeys[key] && !localOnlyKeys[key] {
+			delete(currentRepos, key)
+		}
+	}
+
+	if fetchErr != nil {
+		uiMsgs <- errorMsg{err: fetchErr}
+	}
+
+	final := mapToSlice(currentRepos)
+	uiMsgs <- reposUpdatedMsg(final)
+
+	b, err := json.MarshalIndent(final, "", "  ")
+	if err == nil {
+		tmpPath := path + ".tmp"
+		if err := os.WriteFile(tmpPath, b, 0o644); err == nil {
+			_ = os.Rename(tmpPath, path)
+		}
+	}
+
+	uiMsgs <- refreshFinishedMsg{}
+}
+
+func mapToSlice(m map[string]Repository) []Repository {
+	result := make([]Repository, 0, len(m))
+	for _, r := range m {
+		result = append(result, r)
+	}
+	return result
 }
 
 func mergeRepos(local, remote []Repository) []Repository {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 )
 
 var (
@@ -120,4 +121,27 @@ func EnsureLocal(repo Repository, config Config) (string, error) {
 	}
 
 	return CloneRepo(repo, config)
+}
+
+func OpenInBrowser(repo Repository) error {
+	url := fmt.Sprintf("https://github.com/%s/%s", repo.Owner, repo.Name)
+	return openURL(url)
+}
+
+func OpenPRs(repo Repository) error {
+	url := fmt.Sprintf("https://github.com/%s/%s/pulls", repo.Owner, repo.Name)
+	return openURL(url)
+}
+
+func openURL(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Run()
 }

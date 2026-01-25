@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -66,6 +65,7 @@ var (
 type reposUpdatedMsg []Repository
 type refreshStartedMsg struct{}
 type refreshFinishedMsg struct{}
+type errorMsg struct{ err error }
 
 type Action int
 
@@ -73,6 +73,8 @@ const (
 	ActionNone Action = iota
 	ActionOpen
 	ActionCopy
+	ActionBrowse
+	ActionPRs
 )
 
 const (
@@ -80,7 +82,6 @@ const (
 	cfgCloneRoot
 	cfgAffiliation
 	cfgOrgs
-	cfgMaxResults
 	cfgFieldCount
 )
 
@@ -107,6 +108,8 @@ type Model struct {
 	showConfig  bool
 	configFocus int
 	inputs      []textinput.Model
+
+	showHelp bool
 }
 
 func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Model {
@@ -132,7 +135,6 @@ func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Mode
 	m.inputs[cfgCloneRoot].Placeholder = "/path/to/clone/root"
 	m.inputs[cfgAffiliation].Placeholder = "owner,collaborator,organization_member"
 	m.inputs[cfgOrgs].Placeholder = "org1,org2"
-	m.inputs[cfgMaxResults].Placeholder = "0 (unlimited)"
 
 	m.applySearch()
 	return m
@@ -143,15 +145,9 @@ func (m *Model) loadConfigIntoInputs() {
 	m.inputs[cfgCloneRoot].SetValue(m.config.CloneRoot)
 	m.inputs[cfgAffiliation].SetValue(m.config.GitHub.Affiliation)
 	m.inputs[cfgOrgs].SetValue(m.config.GitHub.Orgs)
-	m.inputs[cfgMaxResults].SetValue(strconv.Itoa(m.config.MaxResults))
 }
 
 func (m *Model) saveConfigFromInputs() error {
-	maxResults, err := strconv.Atoi(m.inputs[cfgMaxResults].Value())
-	if err != nil {
-		maxResults = 0
-	}
-
 	var repoRoots []string
 	for _, p := range strings.Split(m.inputs[cfgRepoRoots].Value(), ",") {
 		p = strings.TrimSpace(p)
@@ -167,7 +163,6 @@ func (m *Model) saveConfigFromInputs() error {
 			Affiliation: m.inputs[cfgAffiliation].Value(),
 			Orgs:        m.inputs[cfgOrgs].Value(),
 		},
-		MaxResults: maxResults,
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -246,7 +241,13 @@ func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case refreshFinishedMsg:
 		m.refreshing = false
-		m.status = ""
+		if m.status == "refreshing..." {
+			m.status = ""
+		}
+		return m, nil
+
+	case errorMsg:
+		m.status = msg.err.Error()
 		return m, nil
 
 	case reposUpdatedMsg:
@@ -260,6 +261,11 @@ func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.showHelp {
+			m.showHelp = false
+			return m, nil
+		}
+
 		switch msg.Type {
 
 		case tea.KeyCtrlC, tea.KeyEsc:
@@ -299,11 +305,28 @@ func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch key {
 				case "q":
 					return m, tea.Quit
+				case "?":
+					m.showHelp = !m.showHelp
+					return m, nil
 				case "y":
 					if len(m.results) > 0 {
 						r := m.results[m.cursor]
 						m.selectedRepo = &r
 						m.selectedAction = ActionCopy
+						return m, tea.Quit
+					}
+				case "b":
+					if len(m.results) > 0 {
+						r := m.results[m.cursor]
+						m.selectedRepo = &r
+						m.selectedAction = ActionBrowse
+						return m, tea.Quit
+					}
+				case "p":
+					if len(m.results) > 0 {
+						r := m.results[m.cursor]
+						m.selectedRepo = &r
+						m.selectedAction = ActionPRs
 						return m, tea.Quit
 					}
 				case "r":
@@ -405,7 +428,6 @@ func (m Model) viewConfig() string {
 		"clone_root",
 		"github.affiliation",
 		"github.orgs",
-		"max_results",
 	}
 
 	for i, label := range labels {
@@ -500,18 +522,52 @@ func (m Model) viewMain() string {
 
 	if m.status != "" {
 		b.WriteString(dimStyle.Render(m.status))
-		b.WriteString("\n")
+		b.WriteString("  ")
 	}
+	b.WriteString(keybindStyle.Render("? help"))
 
-	keybinds := "↑↓ navigate   enter open   y copy   r refresh   , config   q quit"
-	b.WriteString(keybindStyle.Render(keybinds))
+	mainContent := b.String()
 
 	baseStyle := lipgloss.NewStyle().
 		Background(bgColor).
 		Width(m.width).
 		Height(m.height)
 
-	return baseStyle.Render(b.String())
+	if m.showHelp {
+		helpBox := m.buildHelpBox()
+		return lipgloss.Place(
+			m.width, m.height,
+			lipgloss.Right, lipgloss.Bottom,
+			helpBox,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceBackground(bgColor),
+		)
+	}
+
+	return baseStyle.Render(mainContent)
+}
+
+func (m Model) buildHelpBox() string {
+	helpStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#444444")).
+		Padding(0, 1).
+		Background(lipgloss.Color("#111111"))
+
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+
+	lines := []string{
+		keyStyle.Render("enter") + descStyle.Render(" open in editor"),
+		keyStyle.Render("    y") + descStyle.Render(" copy path"),
+		keyStyle.Render("    b") + descStyle.Render(" open in browser"),
+		keyStyle.Render("    p") + descStyle.Render(" open pull requests"),
+		keyStyle.Render("    r") + descStyle.Render(" refresh"),
+		keyStyle.Render("    ,") + descStyle.Render(" config"),
+		keyStyle.Render("    q") + descStyle.Render(" quit"),
+	}
+
+	return helpStyle.Render(strings.Join(lines, "\n"))
 }
 
 func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}) (*Repository, Action) {
