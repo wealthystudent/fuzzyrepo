@@ -53,6 +53,7 @@ github:
 
 Notes:
 
+- first-time usage usually require some load time based on the amount of repos you have access to. 
 - `repo_roots` is a YAML list of absolute paths.
 - `clone_root` must be an absolute path.
 - Clone destination is `<clone_root>/<owner>/<repo>`.
