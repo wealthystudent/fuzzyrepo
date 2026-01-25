@@ -311,18 +311,18 @@ func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case tea.KeySpace:
-			if m.query == "" {
-				m.showCommands = true
-				m.commandCursor = 0
-				return m, nil
-			}
-			m.query += " "
-			m.applySearch()
+			m.showCommands = true
+			m.commandCursor = 0
 			return m, nil
-
 		default:
 			if msg.Type == tea.KeyRunes {
-				m.query += msg.String()
+				r := msg.String()
+				if r == " " {
+					m.showCommands = true
+					m.commandCursor = 0
+					return m, nil
+				}
+				m.query += r
 				m.applySearch()
 				return m, nil
 			}
