@@ -178,6 +178,7 @@ func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Mode
 	return m
 }
 
+// initialize with nothing
 func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -246,7 +247,7 @@ func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshFinishedMsg:
 		m.refreshing = false
 		if m.status == "refreshing..." {
-			m.status = ""
+			m.status = "All good now  :-)"
 		}
 		return m, nil
 

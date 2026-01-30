@@ -63,6 +63,7 @@ func OpenInEditor(path, repoName string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), "FUZZYREPO=1")
 
 	return cmd.Run()
 }
