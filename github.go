@@ -32,9 +32,41 @@ func getGithubClient(ctx context.Context) (*github.Client, error) {
 }
 
 func getRemoteRepositories(ctx context.Context, githubClient *github.Client, cfg Config) ([]Repository, error) {
+	var allRepos []Repository
+
+	// Parse affiliations from config
+	affiliations := parseAffiliations(cfg.GitHub.Affiliation)
+
+	// Fetch repos for each affiliation separately to track the affiliation type
+	for _, affiliation := range affiliations {
+		repos, err := fetchReposWithAffiliation(ctx, githubClient, affiliation)
+		if err != nil {
+			return nil, err
+		}
+		allRepos = append(allRepos, repos...)
+	}
+
+	// Deduplicate repos (a repo might appear in multiple affiliations)
+	return deduplicateRepos(allRepos), nil
+}
+
+// parseAffiliations splits the affiliation string into individual types
+func parseAffiliations(affiliation string) []string {
+	var result []string
+	for _, a := range strings.Split(affiliation, ",") {
+		a = strings.TrimSpace(a)
+		if a != "" {
+			result = append(result, a)
+		}
+	}
+	return result
+}
+
+// fetchReposWithAffiliation fetches repos for a single affiliation type
+func fetchReposWithAffiliation(ctx context.Context, githubClient *github.Client, affiliation string) ([]Repository, error) {
 	opts := &github.RepositoryListOptions{
 		Visibility:  "all",
-		Affiliation: cfg.GitHub.Affiliation,
+		Affiliation: affiliation,
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
 
@@ -57,6 +89,7 @@ func getRemoteRepositories(ctx context.Context, githubClient *github.Client, cfg
 				SSHURL:      repo.GetSSHURL(),
 				LocalPath:   "",
 				ExistsLocal: false,
+				Affiliation: affiliation,
 			}
 			r.ComputeSearchText()
 			repos = append(repos, r)
@@ -70,4 +103,20 @@ func getRemoteRepositories(ctx context.Context, githubClient *github.Client, cfg
 	}
 
 	return repos, nil
+}
+
+// deduplicateRepos removes duplicate repos, keeping the first occurrence
+// (which preserves the affiliation priority: owner > collaborator > org_member)
+func deduplicateRepos(repos []Repository) []Repository {
+	seen := make(map[string]bool)
+	var result []Repository
+
+	for _, repo := range repos {
+		if !seen[repo.FullName] {
+			seen[repo.FullName] = true
+			result = append(result, repo)
+		}
+	}
+
+	return result
 }

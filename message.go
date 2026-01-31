@@ -96,46 +96,6 @@ func (m StatusMessage) Render(width int) string {
 	return emptyLine + "\n" + msgLine + "\n" + emptyLine
 }
 
-// RenderSimple returns the styled message text without the box (for inline use)
-// Used in config overlay where we want the text but not the full box
-func (m StatusMessage) RenderSimple(width int) string {
-	if m.Text == "" {
-		return ""
-	}
-
-	// Empty line with info box background
-	emptyLine := infoBoxBgStyle.Render(strings.Repeat(" ", width))
-
-	// Style the message text based on level
-	var styledContent string
-	switch m.Level {
-	case WarningLevel:
-		styledContent = warningMsgStyle.Render(m.Text)
-	case ErrorLevel:
-		styledContent = errorMsgStyle.Render(m.Text)
-	default:
-		styledContent = infoMsgStyle.Render(m.Text)
-	}
-
-	// Center the content
-	contentWidth := lipgloss.Width(styledContent)
-	leftPad := 0
-	if width > contentWidth {
-		leftPad = (width - contentWidth) / 2
-	}
-
-	// Build the message line with padding
-	msgLine := infoBoxBgStyle.Render(strings.Repeat(" ", leftPad)) + styledContent
-	// Pad to full width
-	msgLineWidth := lipgloss.Width(msgLine)
-	if width > msgLineWidth {
-		msgLine += infoBoxBgStyle.Render(strings.Repeat(" ", width-msgLineWidth))
-	}
-
-	// Build box: empty line + message + empty line
-	return emptyLine + "\n" + msgLine + "\n" + emptyLine
-}
-
 // RenderConfigBox returns a styled info box for the config overlay
 // It spans full width with horizontal padding on left/right
 // Text wraps if it exceeds the available width

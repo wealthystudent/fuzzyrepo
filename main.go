@@ -30,7 +30,6 @@ func main() {
 	config, err := LoadConfig()
 	if err != nil {
 		log.Fatal("could not load config: ", err)
-		os.Exit(1)
 	}
 
 	uiMsgs := make(chan tea.Msg, 10)

@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -71,21 +70,6 @@ func (c Config) GetCloneRoot() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "repos")
-}
-
-func (c Config) GetOrgs() []string {
-	if c.GitHub.Orgs == "" {
-		return nil
-	}
-	parts := strings.Split(c.GitHub.Orgs, ",")
-	var orgs []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			orgs = append(orgs, p)
-		}
-	}
-	return orgs
 }
 
 func LoadConfig() (Config, error) {
@@ -184,19 +168,6 @@ func legacyConfigPath() string {
 		return ".fuzzyrepo.yaml"
 	}
 	return filepath.Join(home, ".fuzzyrepo.yaml")
-}
-
-func ConfigPath() string {
-	xdgPath := xdgConfigPath()
-	legacyPath := legacyConfigPath()
-
-	if _, err := os.Stat(xdgPath); err == nil {
-		return xdgPath
-	}
-	if _, err := os.Stat(legacyPath); err == nil {
-		return legacyPath
-	}
-	return xdgPath
 }
 
 // IsFirstRun returns true if this is the first time fuzzyrepo is being run
