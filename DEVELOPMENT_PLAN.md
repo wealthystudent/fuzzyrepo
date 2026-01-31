@@ -286,6 +286,14 @@ if IsFirstRun() {
 
 ---
 
+### Phase 5.5: Bug Fixes (Before Phase 6)
+
+- [ ] **5.5.1** Fix terminal size coverage - UI should always fill the entire terminal, even when repo list is small or empty
+
+- [ ] **5.5.2** Fix first-run sync - repositories should update/appear after first-run config save (currently sync may be too slow or not working properly)
+
+---
+
 ### Phase 6: Message System
 
 - [ ] **6.1** Create `message.go`:

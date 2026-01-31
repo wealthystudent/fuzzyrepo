@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -16,10 +17,29 @@ type GitHubConfig struct {
 	Orgs        string `yaml:"orgs"`
 }
 
+// ConfigFieldDescriptions maps config field indices to their descriptions
+// Used in the config overlay to show help text for the focused field
+var ConfigFieldDescriptions = map[int]string{
+	0: "Directories to scan for local git repositories (comma-separated absolute paths)",
+	1: "Where to clone new repositories (absolute path, defaults to first repo_root)",
+	2: "Types of repos to fetch: owner, collaborator, organization_member (comma-separated)",
+	3: "Specific GitHub organizations to include (comma-separated, empty = all)",
+	4: "Show repositories you own (yes/no)",
+	5: "Show repositories you collaborate on (yes/no)",
+	6: "Show repositories from your organizations (yes/no)",
+	7: "Show local-only repositories not on GitHub (yes/no)",
+}
+
 type Config struct {
 	RepoRoots []string     `yaml:"repo_roots"`
 	CloneRoot string       `yaml:"clone_root"`
 	GitHub    GitHubConfig `yaml:"github"`
+
+	// Filter settings - control which repos are displayed from cache
+	ShowOwner        bool `yaml:"show_owner"`        // Show repos owned by user (default true)
+	ShowCollaborator bool `yaml:"show_collaborator"` // Show repos user is collaborator on (default true)
+	ShowOrgMember    bool `yaml:"show_org_member"`   // Show repos from orgs user is member of (default true)
+	ShowLocal        bool `yaml:"show_local"`        // Show local-only repos (default true)
 }
 
 func DefaultConfig() Config {
@@ -30,6 +50,10 @@ func DefaultConfig() Config {
 			Affiliation: "owner,collaborator,organization_member",
 			Orgs:        "",
 		},
+		ShowOwner:        true,
+		ShowCollaborator: true,
+		ShowOrgMember:    true,
+		ShowLocal:        true,
 	}
 }
 
@@ -173,4 +197,41 @@ func ConfigPath() string {
 		return legacyPath
 	}
 	return xdgPath
+}
+
+// IsFirstRun returns true if this is the first time fuzzyrepo is being run
+// (no config file exists)
+func IsFirstRun() bool {
+	xdgPath := xdgConfigPath()
+	legacyPath := legacyConfigPath()
+
+	if _, err := os.Stat(xdgPath); err == nil {
+		return false
+	}
+	if _, err := os.Stat(legacyPath); err == nil {
+		return false
+	}
+	return true
+}
+
+// CheckDependencies verifies that all required dependencies are installed and configured
+// Returns an error with a helpful message if any dependency is missing
+func CheckDependencies() error {
+	// Check if git is installed
+	if _, err := exec.LookPath("git"); err != nil {
+		return errors.New("git is not installed. Please install git and try again")
+	}
+
+	// Check if gh (GitHub CLI) is installed
+	if _, err := exec.LookPath("gh"); err != nil {
+		return errors.New("GitHub CLI (gh) is not installed. Please install it: https://cli.github.com")
+	}
+
+	// Check if gh is authenticated
+	cmd := exec.Command("gh", "auth", "status")
+	if err := cmd.Run(); err != nil {
+		return errors.New("GitHub CLI is not authenticated. Please run: gh auth login")
+	}
+
+	return nil
 }

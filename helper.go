@@ -5,15 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
-
-func getOs() string {
-	return runtime.GOOS
-}
 
 func getHomeDir() string {
 	home, err := os.UserHomeDir()
@@ -54,42 +50,7 @@ func getCachePath() string {
 	return filepath.Join(getCacheDir(), "repos.json")
 }
 
-func updateRepoCache(config Config) error {
-	ctx := context.Background()
-	cacheDir := getCacheDir()
-	path := getCachePath()
-
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return err
-	}
-
-	githubClient, err := getGithubClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	remoteRepos, err := getRemoteRepositories(ctx, githubClient, config)
-	if err != nil {
-		return err
-	}
-
-	localRepos := indexLocalRepos(config.GetRepoRoots())
-
-	merged := mergeRepos(localRepos, remoteRepos)
-
-	b, err := json.MarshalIndent(merged, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, b, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, path)
-}
-
-func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg, existingRepos []Repository) {
+func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg) {
 	ctx := context.Background()
 	cacheDir := getCacheDir()
 	path := getCachePath()
@@ -124,15 +85,13 @@ func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg, existingRepos []Re
 		}
 	}
 
-	uiMsgs <- refreshFinishedMsg{}
-}
+	// Update metadata with sync timestamps
+	meta, _ := LoadMetadata()
+	meta.UpdateRemoteSyncTime()
+	meta.UpdateLocalScanTime()
+	_ = SaveMetadata(meta)
 
-func mapToSlice(m map[string]Repository) []Repository {
-	result := make([]Repository, 0, len(m))
-	for _, r := range m {
-		result = append(result, r)
-	}
-	return result
+	uiMsgs <- refreshFinishedMsg{}
 }
 
 func mergeRepos(local, remote []Repository) []Repository {
@@ -208,4 +167,14 @@ func stripAnsi(s string) string {
 		result.WriteRune(r)
 	}
 	return result.String()
+}
+
+// padLineToWidth pads a line to the specified width using the given style
+// This ensures the background color extends to the full terminal width
+func padLineToWidth(line string, width int, style lipgloss.Style) string {
+	lineWidth := lipgloss.Width(line)
+	if lineWidth >= width {
+		return line
+	}
+	return line + style.Render(strings.Repeat(" ", width-lineWidth))
 }

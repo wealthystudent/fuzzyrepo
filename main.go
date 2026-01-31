@@ -10,6 +10,23 @@ import (
 )
 
 func main() {
+	// Handle --sync-remote flag for background sync mode
+	if len(os.Args) > 1 && os.Args[1] == "--sync-remote" {
+		runRemoteSync()
+		return
+	}
+
+	// Check if this is first run (no config file exists)
+	firstRun := IsFirstRun()
+
+	// On first run, check dependencies before proceeding
+	if firstRun {
+		if err := CheckDependencies(); err != nil {
+			fmt.Fprintln(os.Stderr, "Setup error:", err)
+			os.Exit(1)
+		}
+	}
+
 	config, err := LoadConfig()
 	if err != nil {
 		log.Fatal("could not load config: ", err)
@@ -24,23 +41,44 @@ func main() {
 		log.Println("Warning: could not load repo cache:", err)
 	}
 
-	currentRepos := initial
+	// Load metadata to check sync status
+	metadata, _ := LoadMetadata()
+	cacheEmpty := len(initial) == 0
+	needsRemoteSync := cacheEmpty || IsRemoteSyncDue(metadata)
+	needsLocalScan := IsLocalScanDue(metadata)
+
+	// If local scan is due, run it inline (fast) before showing UI
+	// This ensures local repos are always up-to-date
+	if needsLocalScan && len(config.GetRepoRoots()) > 0 {
+		if updated, err := runLocalScan(config, initial); err == nil {
+			initial = updated
+		}
+	}
+
+	// Store initial cache mtime for change detection
+	initialMtime := GetCacheMtime()
+
+	// If remote sync is due (and not first run - we'll spawn after config is set)
+	// spawn detached background process
+	syncSpawned := false
+	if needsRemoteSync && !firstRun && !isSyncRunning() {
+		syncSpawned = spawnDetachedSync()
+	}
 
 	go func() {
 		doRefresh := func() {
 			uiMsgs <- refreshStartedMsg{}
 			cfg, _ := LoadConfig()
-			progressiveRefresh(cfg, uiMsgs, currentRepos)
+			progressiveRefresh(cfg, uiMsgs)
 		}
 
-		doRefresh()
-
+		// Manual refresh requests only - auto sync handled by detached process
 		for range refreshChan {
 			doRefresh()
 		}
 	}()
 
-	selectedRepo, action := ui(initial, config, uiMsgs, refreshChan)
+	selectedRepo, action := ui(initial, config, uiMsgs, refreshChan, initialMtime, syncSpawned, firstRun)
 	executeAction(selectedRepo, action, config)
 }
 
