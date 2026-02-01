@@ -16,6 +16,7 @@ type Repository struct {
 	SSHURL      string `json:"ssh_url"`
 	LocalPath   string `json:"local_path"`
 	ExistsLocal bool   `json:"exists_local"`
+	Affiliation string `json:"affiliation"` // "owner", "collaborator", "organization_member", "local"
 	SearchText  string `json:"-"`
 }
 
@@ -119,8 +120,40 @@ func buildRepoFromLocalPath(repoPath string) Repository {
 		SSHURL:      originURL,
 		LocalPath:   repoPath,
 		ExistsLocal: true,
+		Affiliation: "local",
 	}
 	repo.ComputeSearchText()
 
 	return repo
+}
+
+// filterRepos filters the full repository cache based on config settings
+// Returns a new slice containing only repos that match the filter criteria
+func filterRepos(repos []Repository, cfg Config) []Repository {
+	filtered := make([]Repository, 0, len(repos))
+
+	for _, repo := range repos {
+		if shouldIncludeRepo(repo, cfg) {
+			filtered = append(filtered, repo)
+		}
+	}
+
+	return filtered
+}
+
+// shouldIncludeRepo checks if a repo should be included based on config filters
+func shouldIncludeRepo(repo Repository, cfg Config) bool {
+	switch repo.Affiliation {
+	case "owner", "": // Empty affiliation treated as owner (backwards compatibility)
+		return cfg.ShowOwner
+	case "collaborator":
+		return cfg.ShowCollaborator
+	case "organization_member":
+		return cfg.ShowOrgMember
+	case "local":
+		return cfg.ShowLocal
+	default:
+		// Unknown affiliation, include by default
+		return true
+	}
 }

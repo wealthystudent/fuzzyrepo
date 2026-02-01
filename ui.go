@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -92,6 +94,9 @@ type reposUpdatedMsg []Repository
 type refreshStartedMsg struct{}
 type refreshFinishedMsg struct{}
 type errorMsg struct{ err error }
+type cacheCheckTickMsg struct{} // Periodic tick to check cache file changes
+type clearMessageMsg struct{}   // Timer to clear status message
+type configEditedMsg struct{}   // Config file was edited externally
 
 type Action int
 
@@ -107,19 +112,24 @@ const (
 const (
 	cfgRepoRoots = iota
 	cfgCloneRoot
-	cfgAffiliation
+	cfgUseCloneRules
 	cfgOrgs
+	cfgShowOwner
+	cfgShowCollaborator
+	cfgShowOrgMember
+	cfgShowLocal
 	cfgFieldCount
 )
 
 type Model struct {
-	all     []Repository
+	cache   []Repository // Full unfiltered cache
+	all     []Repository // Filtered repos for display
 	query   string
 	results []Repository
 	usage   UsageData
 	cursor  int
 
-	status     string
+	message    StatusMessage
 	refreshing bool
 
 	width  int
@@ -137,6 +147,29 @@ type Model struct {
 
 	showCommands  bool
 	commandCursor int
+
+	// Cache file watching
+	cacheMtime time.Time
+
+	// First run state
+	firstRun bool
+}
+
+// setMessage sets the status message with the given level
+func (m *Model) setMessage(text string, level MessageLevel) {
+	m.message = StatusMessage{Text: text, Level: level}
+}
+
+// clearMessage clears the status message
+func (m *Model) clearMessage() {
+	m.message = StatusMessage{}
+}
+
+// clearMessageAfter returns a command that clears the message after a delay
+func clearMessageAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
+		return clearMessageMsg{}
+	})
 }
 
 type command struct {
@@ -146,16 +179,22 @@ type command struct {
 	fn     func(*Model)
 }
 
-func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Model {
+func newModel(cache []Repository, config Config, refreshChan chan<- struct{}, cacheMtime time.Time, firstRun bool) Model {
 	usage, _ := LoadUsage()
 
+	// Apply filter to get display repos
+	filtered := filterRepos(cache, config)
+
 	m := Model{
-		all:         all,
+		cache:       cache,
+		all:         filtered,
 		query:       "",
 		config:      config,
 		usage:       usage,
 		refreshChan: refreshChan,
 		inputs:      make([]textinput.Model, cfgFieldCount),
+		cacheMtime:  cacheMtime,
+		firstRun:    firstRun,
 	}
 
 	for i := 0; i < cfgFieldCount; i++ {
@@ -166,21 +205,92 @@ func newModel(all []Repository, config Config, refreshChan chan<- struct{}) Mode
 		ti.PlaceholderStyle = lipgloss.NewStyle().Background(bgColor).Foreground(lipgloss.Color("#444444"))
 		ti.PromptStyle = lipgloss.NewStyle().Background(bgColor)
 		ti.Cursor.Style = lipgloss.NewStyle().Background(bgColor)
+		ti.Cursor.TextStyle = lipgloss.NewStyle().Background(bgColor)
 		m.inputs[i] = ti
 	}
 
 	m.inputs[cfgRepoRoots].Placeholder = "/path/to/repos,/another/path"
 	m.inputs[cfgCloneRoot].Placeholder = "/path/to/clone/root"
-	m.inputs[cfgAffiliation].Placeholder = "owner,collaborator,organization_member"
-	m.inputs[cfgOrgs].Placeholder = "org1,org2"
+	m.inputs[cfgUseCloneRules].Placeholder = "no"
+	m.inputs[cfgOrgs].Placeholder = "org1,org2 (empty = all)"
+	m.inputs[cfgShowOwner].Placeholder = "yes"
+	m.inputs[cfgShowCollaborator].Placeholder = "yes"
+	m.inputs[cfgShowOrgMember].Placeholder = "yes"
+	m.inputs[cfgShowLocal].Placeholder = "yes"
+
+	// Shorter width for boolean fields
+	m.inputs[cfgUseCloneRules].Width = 5
+	m.inputs[cfgShowOwner].Width = 5
+	m.inputs[cfgShowCollaborator].Width = 5
+	m.inputs[cfgShowOrgMember].Width = 5
+	m.inputs[cfgShowLocal].Width = 5
 
 	m.applySearch()
 	return m
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+// cacheCheckInterval defines how often to check for cache file changes
+const cacheCheckInterval = 2 * time.Second
+
+// tickCacheCheck returns a command that sends a tick after the interval
+func tickCacheCheck() tea.Cmd {
+	return tea.Tick(cacheCheckInterval, func(t time.Time) tea.Msg {
+		return cacheCheckTickMsg{}
+	})
+}
+
+// openConfigInEditor opens the config file in the user's $EDITOR
+func openConfigInEditor() tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi" // fallback
+	}
+	configPath := xdgConfigPath()
+	c := exec.Command(editor, configPath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return configEditedMsg{}
+	})
+}
+
+// Init starts the cache file watcher ticker
+func (m Model) Init() tea.Cmd {
+	return tickCacheCheck()
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle messages that should be processed regardless of overlay state
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+
+	case clearMessageMsg:
+		m.clearMessage()
+		return m, nil
+
+	case cacheCheckTickMsg:
+		// Check if cache file has been updated by external process
+		currentMtime := GetCacheMtime()
+		if !currentMtime.IsZero() && currentMtime.After(m.cacheMtime) {
+			// Cache file was updated, reload it
+			if repos, err := loadRepoCache(); err == nil && len(repos) > 0 {
+				m.cache = repos
+				m.all = filterRepos(repos, m.config)
+				m.applySearch()
+				if m.cursor >= len(m.results) {
+					m.cursor = max(0, len(m.results)-1)
+				}
+				m.cacheMtime = currentMtime
+				m.refreshing = false // Clear refreshing state since sync completed
+				m.setMessage(fmt.Sprintf("%d repos loaded", len(m.all)), InfoLevel)
+				// Clear message after 5 seconds
+				return m, tea.Batch(tickCacheCheck(), clearMessageAfter(5*time.Second))
+			}
+		}
+		// Always schedule next tick
+		return m, tickCacheCheck()
+	}
+
 	if m.showConfig {
 		return m.updateConfig(msg)
 	}
@@ -200,13 +310,39 @@ func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case tea.KeyEnter:
-			if err := m.saveConfigFromInputs(); err != nil {
-				m.status = fmt.Sprintf("config error: %v", err)
+			changes, err := m.saveConfigFromInputs()
+			if err != nil {
+				m.setMessage(fmt.Sprintf("config error: %v", err), ErrorLevel)
 			} else {
-				m.status = "config saved"
-				select {
-				case m.refreshChan <- struct{}{}:
-				default:
+				// Always reapply filters after config save
+				m.all = filterRepos(m.cache, m.config)
+				m.applySearch()
+				if m.cursor >= len(m.results) {
+					m.cursor = max(0, len(m.results)-1)
+				}
+				m.setMessage(fmt.Sprintf("config saved, %d repos", len(m.all)), InfoLevel)
+
+				// If repo_roots changed, trigger local scan to update repos
+				if changes.repoRootsChanged {
+					m.setMessage("config saved, scanning local repos...", InfoLevel)
+					if updated, err := runLocalScan(m.config, m.cache); err == nil {
+						m.cache = updated
+						m.all = filterRepos(m.cache, m.config)
+						m.applySearch()
+						m.cacheMtime = GetCacheMtime()
+						m.setMessage(fmt.Sprintf("config saved, %d repos", len(m.all)), InfoLevel)
+					}
+				}
+
+				// On first run, spawn background sync to fetch remote repos
+				if m.firstRun {
+					m.firstRun = false
+					if !isSyncRunning() {
+						if spawnDetachedSync() {
+							m.setMessage("Config saved, syncing repositories...", InfoLevel)
+							m.refreshing = true
+						}
+					}
 				}
 			}
 			m.showConfig = false
@@ -223,7 +359,23 @@ func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.configFocus = (m.configFocus - 1 + cfgFieldCount) % cfgFieldCount
 			m.inputs[m.configFocus].Focus()
 			return m, nil
+
+		case tea.KeySpace:
+			return m, openConfigInEditor()
 		}
+	case configEditedMsg:
+		// Reload config after external edit and close overlay
+		if cfg, err := LoadConfig(); err == nil {
+			m.config = cfg
+			m.loadConfigIntoInputs()
+			m.all = filterRepos(m.cache, m.config)
+			m.applySearch()
+			m.setMessage("config reloaded", InfoLevel)
+		} else {
+			m.setMessage(fmt.Sprintf("config reload error: %v", err), ErrorLevel)
+		}
+		m.showConfig = false // Close config overlay after external edit
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -234,35 +386,35 @@ func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
-	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		return m, nil
-
 	case refreshStartedMsg:
 		m.refreshing = true
-		m.status = "refreshing..."
+		m.setMessage("refreshing...", InfoLevel)
 		return m, nil
 
 	case refreshFinishedMsg:
 		m.refreshing = false
-		if m.status == "refreshing..." {
-			m.status = ""
+		if m.message.Text == "refreshing..." {
+			m.setMessage("Sync complete", InfoLevel)
+			return m, clearMessageAfter(5 * time.Second)
 		}
 		return m, nil
 
 	case errorMsg:
-		m.status = msg.err.Error()
+		m.setMessage(msg.err.Error(), ErrorLevel)
 		return m, nil
 
 	case reposUpdatedMsg:
-		m.all = []Repository(msg)
+		m.cache = []Repository(msg)
+		m.all = filterRepos(m.cache, m.config)
 		m.applySearch()
 
 		if m.cursor >= len(m.results) {
 			m.cursor = max(0, len(m.results)-1)
 		}
-		m.status = fmt.Sprintf("%d repos", len(m.all))
-		return m, nil
+		m.setMessage(fmt.Sprintf("%d repos loaded", len(m.all)), InfoLevel)
+		// Update our tracked mtime since we just got new data
+		m.cacheMtime = GetCacheMtime()
+		return m, clearMessageAfter(5 * time.Second)
 
 	case tea.KeyMsg:
 		if m.showCommands {
@@ -403,6 +555,16 @@ func (m Model) updateCommands(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) viewMain() string {
+	// Use sensible defaults if window size not yet received
+	width := m.width
+	height := m.height
+	if width == 0 {
+		width = 80
+	}
+	if height == 0 {
+		height = 24
+	}
+
 	var b strings.Builder
 
 	localW := 6
@@ -410,9 +572,9 @@ func (m Model) viewMain() string {
 	ownerW := 20
 	nameW := 35
 
-	if m.width > 0 {
-		ownerW = clamp(m.width/4, 10, 30)
-		nameW = m.width - ownerW - localW - separators
+	if width > 0 {
+		ownerW = clamp(width/4, 10, 30)
+		nameW = width - ownerW - localW - separators
 		nameW = max(15, nameW)
 	}
 
@@ -421,12 +583,17 @@ func (m Model) viewMain() string {
 	header := headerStyle.Render(padOrTrim("REPO", nameW)) + sep +
 		headerStyle.Render(padOrTrim("LOCAL", localW)) + sep +
 		headerStyle.Render(padOrTrim("OWNER", ownerW))
-	b.WriteString(header)
+	b.WriteString(padLineToWidth(header, width, bgOnlyStyle))
 	b.WriteString("\n")
 
 	maxRows := 8
-	if m.height > 0 {
-		maxRows = max(5, m.height-6)
+	if height > 0 {
+		// Account for: header(1) + separator(1) + message box(0-3) + search(1) + buffer
+		reserved := 4
+		if !m.message.IsEmpty() {
+			reserved += 3 // empty line + message + empty line
+		}
+		maxRows = max(5, height-reserved)
 	}
 
 	total := len(m.results)
@@ -441,14 +608,17 @@ func (m Model) viewMain() string {
 		start = max(0, end-maxRows)
 	}
 
+	// Empty lines above the list (padding)
+	emptyLine := bgOnlyStyle.Render(strings.Repeat(" ", width))
 	for i := 0; i < maxRows-(end-start); i++ {
+		b.WriteString(emptyLine)
 		b.WriteString("\n")
 	}
 
 	overlayOpen := m.showCommands || m.showConfig
 
 	if total == 0 {
-		b.WriteString(dimStyle.Render("no matches"))
+		b.WriteString(padLineToWidth(dimStyle.Render("no matches"), width, bgOnlyStyle))
 		b.WriteString("\n")
 	} else {
 		for i := start; i < end; i++ {
@@ -461,6 +631,7 @@ func (m Model) viewMain() string {
 				localStyled = localYesStyle.Render(padOrTrim(localText, localW))
 			}
 
+			var line string
 			if i == m.cursor && !overlayOpen {
 				cursorSep := cursorSepStyle.Render("  ")
 				namePart := cursorStyle.Render(padOrTrim(r.Name, nameW))
@@ -471,17 +642,27 @@ func (m Model) viewMain() string {
 					localPart = localYesCursorStyle.Render(padOrTrim(localText, localW))
 				}
 
-				b.WriteString(namePart + cursorSep + localPart + cursorSep + ownerPart)
+				line = namePart + cursorSep + localPart + cursorSep + ownerPart
+				b.WriteString(padLineToWidth(line, width, cursorSepStyle))
 			} else {
 				namePart := repoNameStyle.Render(padOrTrim(r.Name, nameW))
 				ownerPart := ownerStyle.Render(padOrTrim(r.Owner, ownerW))
-				b.WriteString(namePart + sep + localStyled + sep + ownerPart)
+				line = namePart + sep + localStyled + sep + ownerPart
+				b.WriteString(padLineToWidth(line, width, bgOnlyStyle))
 			}
 			b.WriteString("\n")
 		}
 	}
 
+	// Separator line between list and search input
+	b.WriteString(emptyLine)
 	b.WriteString("\n")
+
+	// Message box (only if there's a message) - includes padding lines above/below
+	if !m.message.IsEmpty() {
+		b.WriteString(m.message.Render(width))
+		b.WriteString("\n")
+	}
 
 	searchLeft := promptStyle.Render("> ") + queryStyle.Render(m.query)
 	if m.query == "" {
@@ -491,7 +672,7 @@ func (m Model) viewMain() string {
 	hints := keybindStyle.Render("space commands  enter open  ")
 	searchLeftWidth := lipgloss.Width(searchLeft)
 	hintsWidth := lipgloss.Width(hints)
-	padding := m.width - searchLeftWidth - hintsWidth
+	padding := width - searchLeftWidth - hintsWidth
 	if padding < 2 {
 		padding = 2
 	}
@@ -499,14 +680,11 @@ func (m Model) viewMain() string {
 	b.WriteString(searchLeft + bgOnlyStyle.Render(strings.Repeat(" ", padding)) + hints)
 
 	mainContent := b.String()
-	baseStyle := lipgloss.NewStyle().
-		Background(bgColor).
-		Width(m.width).
-		Height(m.height)
-	mainRendered := baseStyle.Render(mainContent)
+	mainRendered := lipgloss.Place(width, height, lipgloss.Left, lipgloss.Bottom, mainContent, lipgloss.WithWhitespaceBackground(bgColor))
 
 	if m.showConfig {
-		return m.overlayCenter(mainRendered, m.buildConfigBox())
+		configContent := m.buildConfigBox()
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, configContent, lipgloss.WithWhitespaceBackground(bgColor))
 	}
 	if m.showCommands {
 		return m.overlayCenter(mainRendered, m.buildCommandBox())
@@ -555,24 +733,69 @@ func (m Model) buildCommandBox() string {
 }
 
 func (m Model) buildConfigBox() string {
-	labels := []string{
-		"repo_roots",
-		"clone_root",
-		"github.affiliation",
-		"github.orgs",
+	// Main config labels (text inputs)
+	mainLabels := []string{
+		"Repository Dirs",
+		"Clone Directory",
+		"Use Clone Rules",
+		"GitHub Orgs",
+	}
+
+	// Filter labels (yes/no inputs)
+	filterLabels := []string{
+		"Show Owned",
+		"Show Collaborator",
+		"Show Org Member",
+		"Show Local Only",
+	}
+
+	// Calculate the width of the config content (label + input)
+	// Label is 20 chars, input is 50 chars wide
+	contentWidth := 20 + 50
+
+	// Respect terminal width - leave some margin for the overlay border/padding
+	maxWidth := contentWidth
+	if m.width > 0 && m.width-6 < maxWidth {
+		maxWidth = m.width - 6
+		if maxWidth < 40 {
+			maxWidth = 40
+		}
 	}
 
 	var lines []string
 	lines = append(lines, inputText.Render("Config"))
 	lines = append(lines, "")
 
-	for i, label := range labels {
+	// Main config fields
+	for i, label := range mainLabels {
 		line := configLabelStyle.Render(fmt.Sprintf("%-20s", label)) + m.inputs[i].View()
 		lines = append(lines, line)
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, keybindStyle.Render("tab/↑↓ navigate   enter save   esc close"))
+	lines = append(lines, dimStyle.Render("Filters:"))
+
+	// Filter fields
+	for i, label := range filterLabels {
+		fieldIdx := cfgShowOwner + i
+		line := configLabelStyle.Render(fmt.Sprintf("%-20s", label)) + m.inputs[fieldIdx].View()
+		lines = append(lines, line)
+	}
+
+	lines = append(lines, "")
+
+	// Show description for focused field using the info box style
+	if desc, ok := ConfigFieldDescriptions[m.configFocus]; ok {
+		// Render info box - text will wrap if needed
+		descBox := RenderConfigBox(desc, maxWidth, 1)
+		// Add each line of the box
+		for _, line := range strings.Split(descBox, "\n") {
+			lines = append(lines, line)
+		}
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, keybindStyle.Render("tab/↑↓ navigate   enter save   space edit file   esc close"))
 
 	return overlayStyle.Render(strings.Join(lines, "\n"))
 }
@@ -678,11 +901,34 @@ func (m *Model) applySearch() {
 func (m *Model) loadConfigIntoInputs() {
 	m.inputs[cfgRepoRoots].SetValue(strings.Join(m.config.RepoRoots, ", "))
 	m.inputs[cfgCloneRoot].SetValue(m.config.CloneRoot)
-	m.inputs[cfgAffiliation].SetValue(m.config.GitHub.Affiliation)
+	m.inputs[cfgUseCloneRules].SetValue(boolToYesNo(m.config.UseCloneRules))
 	m.inputs[cfgOrgs].SetValue(m.config.GitHub.Orgs)
+	m.inputs[cfgShowOwner].SetValue(boolToYesNo(m.config.ShowOwner))
+	m.inputs[cfgShowCollaborator].SetValue(boolToYesNo(m.config.ShowCollaborator))
+	m.inputs[cfgShowOrgMember].SetValue(boolToYesNo(m.config.ShowOrgMember))
+	m.inputs[cfgShowLocal].SetValue(boolToYesNo(m.config.ShowLocal))
 }
 
-func (m *Model) saveConfigFromInputs() error {
+// boolToYesNo converts a bool to "yes" or "no"
+func boolToYesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
+}
+
+// yesNoToBool converts "yes"/"no" string to bool (defaults to true for empty/invalid)
+func yesNoToBool(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return s != "no" && s != "n" && s != "false" && s != "0"
+}
+
+type configChanges struct {
+	repoRootsChanged bool
+	filtersChanged   bool
+}
+
+func (m *Model) saveConfigFromInputs() (changes configChanges, err error) {
 	var repoRoots []string
 	for _, p := range strings.Split(m.inputs[cfgRepoRoots].Value(), ",") {
 		p = strings.TrimSpace(p)
@@ -691,25 +937,60 @@ func (m *Model) saveConfigFromInputs() error {
 		}
 	}
 
+	// Check if repo_roots changed
+	oldRoots := m.config.RepoRoots
+	changes.repoRootsChanged = !stringSlicesEqual(oldRoots, repoRoots)
+
+	// Parse filter settings
+	showOwner := yesNoToBool(m.inputs[cfgShowOwner].Value())
+	showCollaborator := yesNoToBool(m.inputs[cfgShowCollaborator].Value())
+	showOrgMember := yesNoToBool(m.inputs[cfgShowOrgMember].Value())
+	showLocal := yesNoToBool(m.inputs[cfgShowLocal].Value())
+
+	// Check if filters changed
+	changes.filtersChanged = showOwner != m.config.ShowOwner ||
+		showCollaborator != m.config.ShowCollaborator ||
+		showOrgMember != m.config.ShowOrgMember ||
+		showLocal != m.config.ShowLocal
+
 	cfg := Config{
-		RepoRoots: repoRoots,
-		CloneRoot: m.inputs[cfgCloneRoot].Value(),
+		RepoRoots:     repoRoots,
+		CloneRoot:     m.inputs[cfgCloneRoot].Value(),
+		UseCloneRules: yesNoToBool(m.inputs[cfgUseCloneRules].Value()),
+		CloneRules:    m.config.CloneRules, // Preserve existing clone rules (edited via config file)
 		GitHub: GitHubConfig{
-			Affiliation: m.inputs[cfgAffiliation].Value(),
+			Affiliation: "owner,collaborator,organization_member", // Always fetch all
 			Orgs:        m.inputs[cfgOrgs].Value(),
 		},
+		ShowOwner:        showOwner,
+		ShowCollaborator: showCollaborator,
+		ShowOrgMember:    showOrgMember,
+		ShowLocal:        showLocal,
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return err
+		return configChanges{}, err
 	}
 
 	if err := SaveConfig(cfg); err != nil {
-		return err
+		return configChanges{}, err
 	}
 
 	m.config = cfg
-	return nil
+	return changes, nil
+}
+
+// stringSlicesEqual compares two string slices for equality
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Model) getCommands() []command {
@@ -721,7 +1002,7 @@ func (m *Model) getCommands() []command {
 		{key: "r", name: "refresh", fn: func(m *Model) {
 			if !m.refreshing {
 				m.refreshing = true
-				m.status = "refreshing..."
+				m.setMessage("refreshing...", InfoLevel)
 				select {
 				case m.refreshChan <- struct{}{}:
 				default:
@@ -741,27 +1022,27 @@ func (m *Model) getCommands() []command {
 	}
 }
 
-func stripAnsi(s string) string {
-	var result strings.Builder
-	inEscape := false
-	for _, r := range s {
-		if r == '\x1b' {
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEscape = false
-			}
-			continue
-		}
-		result.WriteRune(r)
-	}
-	return result.String()
-}
+func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}, cacheMtime time.Time, syncInProgress bool, firstRun bool) (*Repository, Action, Config) {
+	model := newModel(initial, config, refreshChan, cacheMtime, firstRun)
 
-func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}) (*Repository, Action) {
-	model := newModel(initial, config, refreshChan)
+	// Set initial status if background sync was spawned
+	if syncInProgress {
+		model.setMessage("Syncing repositories in background...", InfoLevel)
+		model.refreshing = true
+	}
+
+	// On first run, auto-open config overlay so user can set up
+	if firstRun {
+		model.showConfig = true
+		model.configFocus = 0
+		model.setMessage("Welcome! Please configure your settings.", InfoLevel)
+		model.loadConfigIntoInputs()
+		for i := range model.inputs {
+			model.inputs[i].Blur()
+		}
+		model.inputs[0].Focus()
+	}
+
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	go func() {
@@ -777,5 +1058,5 @@ func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan 
 	}
 
 	m := finalModel.(Model)
-	return m.selectedRepo, m.selectedAction
+	return m.selectedRepo, m.selectedAction, m.config
 }

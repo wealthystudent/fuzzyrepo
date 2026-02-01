@@ -84,6 +84,10 @@ function M.open_repo(path)
 	end
 	vim.cmd("tabnew")
 	vim.cmd("tcd " .. vim.fn.fnameescape(target))
+	-- Open file explorer for new repo tabs
+	vim.schedule(function()
+		pcall(vim.cmd, "NvimTreeOpen")
+	end)
 end
 
 return M
