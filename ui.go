@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -95,6 +96,7 @@ type refreshFinishedMsg struct{}
 type errorMsg struct{ err error }
 type cacheCheckTickMsg struct{} // Periodic tick to check cache file changes
 type clearMessageMsg struct{}   // Timer to clear status message
+type configEditedMsg struct{}   // Config file was edited externally
 
 type Action int
 
@@ -110,7 +112,7 @@ const (
 const (
 	cfgRepoRoots = iota
 	cfgCloneRoot
-	cfgAffiliation
+	cfgUseCloneRules
 	cfgOrgs
 	cfgShowOwner
 	cfgShowCollaborator
@@ -209,14 +211,15 @@ func newModel(cache []Repository, config Config, refreshChan chan<- struct{}, ca
 
 	m.inputs[cfgRepoRoots].Placeholder = "/path/to/repos,/another/path"
 	m.inputs[cfgCloneRoot].Placeholder = "/path/to/clone/root"
-	m.inputs[cfgAffiliation].Placeholder = "owner,collaborator,organization_member"
-	m.inputs[cfgOrgs].Placeholder = "org1,org2"
+	m.inputs[cfgUseCloneRules].Placeholder = "no"
+	m.inputs[cfgOrgs].Placeholder = "org1,org2 (empty = all)"
 	m.inputs[cfgShowOwner].Placeholder = "yes"
 	m.inputs[cfgShowCollaborator].Placeholder = "yes"
 	m.inputs[cfgShowOrgMember].Placeholder = "yes"
 	m.inputs[cfgShowLocal].Placeholder = "yes"
 
 	// Shorter width for boolean fields
+	m.inputs[cfgUseCloneRules].Width = 5
 	m.inputs[cfgShowOwner].Width = 5
 	m.inputs[cfgShowCollaborator].Width = 5
 	m.inputs[cfgShowOrgMember].Width = 5
@@ -233,6 +236,19 @@ const cacheCheckInterval = 2 * time.Second
 func tickCacheCheck() tea.Cmd {
 	return tea.Tick(cacheCheckInterval, func(t time.Time) tea.Msg {
 		return cacheCheckTickMsg{}
+	})
+}
+
+// openConfigInEditor opens the config file in the user's $EDITOR
+func openConfigInEditor() tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi" // fallback
+	}
+	configPath := xdgConfigPath()
+	c := exec.Command(editor, configPath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return configEditedMsg{}
 	})
 }
 
@@ -298,17 +314,13 @@ func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				m.setMessage(fmt.Sprintf("config error: %v", err), ErrorLevel)
 			} else {
-				m.setMessage("config saved", InfoLevel)
-
-				// If filters changed, reapply filtering
-				if changes.filtersChanged {
-					m.all = filterRepos(m.cache, m.config)
-					m.applySearch()
-					if m.cursor >= len(m.results) {
-						m.cursor = max(0, len(m.results)-1)
-					}
-					m.setMessage(fmt.Sprintf("config saved, %d repos", len(m.all)), InfoLevel)
+				// Always reapply filters after config save
+				m.all = filterRepos(m.cache, m.config)
+				m.applySearch()
+				if m.cursor >= len(m.results) {
+					m.cursor = max(0, len(m.results)-1)
 				}
+				m.setMessage(fmt.Sprintf("config saved, %d repos", len(m.all)), InfoLevel)
 
 				// If repo_roots changed, trigger local scan to update repos
 				if changes.repoRootsChanged {
@@ -347,7 +359,23 @@ func (m Model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.configFocus = (m.configFocus - 1 + cfgFieldCount) % cfgFieldCount
 			m.inputs[m.configFocus].Focus()
 			return m, nil
+
+		case tea.KeySpace:
+			return m, openConfigInEditor()
 		}
+	case configEditedMsg:
+		// Reload config after external edit and close overlay
+		if cfg, err := LoadConfig(); err == nil {
+			m.config = cfg
+			m.loadConfigIntoInputs()
+			m.all = filterRepos(m.cache, m.config)
+			m.applySearch()
+			m.setMessage("config reloaded", InfoLevel)
+		} else {
+			m.setMessage(fmt.Sprintf("config reload error: %v", err), ErrorLevel)
+		}
+		m.showConfig = false // Close config overlay after external edit
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -709,7 +737,7 @@ func (m Model) buildConfigBox() string {
 	mainLabels := []string{
 		"Repository Dirs",
 		"Clone Directory",
-		"GitHub Affiliation",
+		"Use Clone Rules",
 		"GitHub Orgs",
 	}
 
@@ -767,7 +795,7 @@ func (m Model) buildConfigBox() string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, keybindStyle.Render("tab/↑↓ navigate   enter save   esc close"))
+	lines = append(lines, keybindStyle.Render("tab/↑↓ navigate   enter save   space edit file   esc close"))
 
 	return overlayStyle.Render(strings.Join(lines, "\n"))
 }
@@ -873,7 +901,7 @@ func (m *Model) applySearch() {
 func (m *Model) loadConfigIntoInputs() {
 	m.inputs[cfgRepoRoots].SetValue(strings.Join(m.config.RepoRoots, ", "))
 	m.inputs[cfgCloneRoot].SetValue(m.config.CloneRoot)
-	m.inputs[cfgAffiliation].SetValue(m.config.GitHub.Affiliation)
+	m.inputs[cfgUseCloneRules].SetValue(boolToYesNo(m.config.UseCloneRules))
 	m.inputs[cfgOrgs].SetValue(m.config.GitHub.Orgs)
 	m.inputs[cfgShowOwner].SetValue(boolToYesNo(m.config.ShowOwner))
 	m.inputs[cfgShowCollaborator].SetValue(boolToYesNo(m.config.ShowCollaborator))
@@ -926,10 +954,12 @@ func (m *Model) saveConfigFromInputs() (changes configChanges, err error) {
 		showLocal != m.config.ShowLocal
 
 	cfg := Config{
-		RepoRoots: repoRoots,
-		CloneRoot: m.inputs[cfgCloneRoot].Value(),
+		RepoRoots:     repoRoots,
+		CloneRoot:     m.inputs[cfgCloneRoot].Value(),
+		UseCloneRules: yesNoToBool(m.inputs[cfgUseCloneRules].Value()),
+		CloneRules:    m.config.CloneRules, // Preserve existing clone rules (edited via config file)
 		GitHub: GitHubConfig{
-			Affiliation: m.inputs[cfgAffiliation].Value(),
+			Affiliation: "owner,collaborator,organization_member", // Always fetch all
 			Orgs:        m.inputs[cfgOrgs].Value(),
 		},
 		ShowOwner:        showOwner,
@@ -992,7 +1022,7 @@ func (m *Model) getCommands() []command {
 	}
 }
 
-func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}, cacheMtime time.Time, syncInProgress bool, firstRun bool) (*Repository, Action) {
+func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}, cacheMtime time.Time, syncInProgress bool, firstRun bool) (*Repository, Action, Config) {
 	model := newModel(initial, config, refreshChan, cacheMtime, firstRun)
 
 	// Set initial status if background sync was spawned
@@ -1028,5 +1058,5 @@ func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan 
 	}
 
 	m := finalModel.(Model)
-	return m.selectedRepo, m.selectedAction
+	return m.selectedRepo, m.selectedAction, m.config
 }

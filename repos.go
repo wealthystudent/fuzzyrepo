@@ -144,7 +144,7 @@ func filterRepos(repos []Repository, cfg Config) []Repository {
 // shouldIncludeRepo checks if a repo should be included based on config filters
 func shouldIncludeRepo(repo Repository, cfg Config) bool {
 	switch repo.Affiliation {
-	case "owner":
+	case "owner", "": // Empty affiliation treated as owner (backwards compatibility)
 		return cfg.ShowOwner
 	case "collaborator":
 		return cfg.ShowCollaborator

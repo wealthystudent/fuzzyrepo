@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 
 	"gopkg.in/yaml.v3"
@@ -16,13 +17,19 @@ type GitHubConfig struct {
 	Orgs        string `yaml:"orgs"`
 }
 
+// CloneRule defines a regex pattern to match repo full_name and a target directory
+type CloneRule struct {
+	Pattern string `yaml:"pattern"` // Regex pattern to match against full_name (owner/repo)
+	Path    string `yaml:"path"`    // Target directory (repo name will be appended)
+}
+
 // ConfigFieldDescriptions maps config field indices to their descriptions
 // Used in the config overlay to show help text for the focused field
 var ConfigFieldDescriptions = map[int]string{
 	0: "Directories to scan for local git repositories (comma-separated absolute paths)",
-	1: "Where to clone new repositories (absolute path, defaults to first repo_root)",
-	2: "Types of repos to fetch: owner, collaborator, organization_member (comma-separated)",
-	3: "Specific GitHub organizations to include (comma-separated, empty = all)",
+	1: "Default clone directory when clone rules are disabled or no rule matches",
+	2: "Enable regex-based clone rules. Press 'e' to edit config file and add rules:\n  clone_rules:\n    - pattern: \"^org/.*\"\n      path: /path/to/dir",
+	3: "Limit to specific GitHub organizations (comma-separated, empty = all orgs)",
 	4: "Show repositories you own (yes/no)",
 	5: "Show repositories you collaborate on (yes/no)",
 	6: "Show repositories from your organizations (yes/no)",
@@ -30,9 +37,11 @@ var ConfigFieldDescriptions = map[int]string{
 }
 
 type Config struct {
-	RepoRoots []string     `yaml:"repo_roots"`
-	CloneRoot string       `yaml:"clone_root"`
-	GitHub    GitHubConfig `yaml:"github"`
+	RepoRoots     []string     `yaml:"repo_roots"`
+	CloneRoot     string       `yaml:"clone_root"`
+	UseCloneRules bool         `yaml:"use_clone_rules"`       // Enable regex-based clone path rules
+	CloneRules    []CloneRule  `yaml:"clone_rules,omitempty"` // Ordered rules for clone path, first match wins
+	GitHub        GitHubConfig `yaml:"github"`
 
 	// Filter settings - control which repos are displayed from cache
 	ShowOwner        bool `yaml:"show_owner"`        // Show repos owned by user (default true)
@@ -43,8 +52,10 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		RepoRoots: nil,
-		CloneRoot: "",
+		RepoRoots:     nil,
+		CloneRoot:     "",
+		UseCloneRules: false,
+		CloneRules:    nil,
 		GitHub: GitHubConfig{
 			Affiliation: "owner,collaborator,organization_member",
 			Orgs:        "",
@@ -70,6 +81,26 @@ func (c Config) GetCloneRoot() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "repos")
+}
+
+// GetClonePath returns the full destination path for cloning a repo.
+// If UseCloneRules is enabled, it checks clone_rules in order and returns the first matching rule's path + repo name.
+// Falls back to clone_root + repo name if no rules match or UseCloneRules is disabled.
+func (c Config) GetClonePath(fullName, repoName string) string {
+	if c.UseCloneRules {
+		for _, rule := range c.CloneRules {
+			re, err := regexp.Compile(rule.Pattern)
+			if err != nil {
+				// Invalid regex, skip this rule
+				continue
+			}
+			if re.MatchString(fullName) {
+				return filepath.Join(rule.Path, repoName)
+			}
+		}
+	}
+	// No rules matched or UseCloneRules disabled, use default clone root
+	return filepath.Join(c.GetCloneRoot(), repoName)
 }
 
 func LoadConfig() (Config, error) {
@@ -136,6 +167,22 @@ func (c Config) Validate() error {
 
 	if c.CloneRoot != "" && !filepath.IsAbs(c.CloneRoot) {
 		return fmt.Errorf("clone_root must be an absolute path (got %q)", c.CloneRoot)
+	}
+
+	// Validate clone rules
+	for i, rule := range c.CloneRules {
+		if rule.Pattern == "" {
+			return fmt.Errorf("clone_rules[%d]: pattern cannot be empty", i)
+		}
+		if _, err := regexp.Compile(rule.Pattern); err != nil {
+			return fmt.Errorf("clone_rules[%d]: invalid regex pattern %q: %v", i, rule.Pattern, err)
+		}
+		if rule.Path == "" {
+			return fmt.Errorf("clone_rules[%d]: path cannot be empty", i)
+		}
+		if !filepath.IsAbs(rule.Path) {
+			return fmt.Errorf("clone_rules[%d]: path must be absolute (got %q)", i, rule.Path)
+		}
 	}
 
 	return nil

@@ -77,8 +77,8 @@ func main() {
 		}
 	}()
 
-	selectedRepo, action := ui(initial, config, uiMsgs, refreshChan, initialMtime, syncSpawned, firstRun)
-	executeAction(selectedRepo, action, config)
+	selectedRepo, action, updatedConfig := ui(initial, config, uiMsgs, refreshChan, initialMtime, syncSpawned, firstRun)
+	executeAction(selectedRepo, action, updatedConfig)
 }
 
 func executeAction(repo *Repository, action Action, config Config) {

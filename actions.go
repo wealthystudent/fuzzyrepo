@@ -20,15 +20,15 @@ func CloneRepo(repo Repository, config Config) (string, error) {
 		return repo.LocalPath, ErrAlreadyExists
 	}
 
-	cloneRoot := config.GetCloneRoot()
-	destPath := filepath.Join(cloneRoot, repo.Name)
+	destPath := config.GetClonePath(repo.FullName, repo.Name)
+	destDir := filepath.Dir(destPath)
 
 	if _, err := os.Stat(destPath); err == nil {
 		return destPath, ErrAlreadyExists
 	}
 
-	if err := os.MkdirAll(cloneRoot, 0o755); err != nil {
-		return "", fmt.Errorf("create clone root: %w", err)
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return "", fmt.Errorf("create clone directory: %w", err)
 	}
 
 	cloneURL := repo.SSHURL
