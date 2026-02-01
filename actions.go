@@ -7,12 +7,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 var (
 	ErrNoEditor      = errors.New("$EDITOR is not set")
+	ErrInvalidEditor = errors.New("$EDITOR contains invalid characters")
 	ErrCloneFailed   = errors.New("git clone failed")
 	ErrAlreadyExists = errors.New("local path already exists")
+	ErrInvalidPath   = errors.New("path contains invalid characters")
 )
 
 func CloneRepo(repo Repository, config Config) (string, error) {
@@ -47,6 +50,23 @@ func CloneRepo(repo Repository, config Config) (string, error) {
 	return destPath, nil
 }
 
+// isValidEditor checks if the editor value is safe to execute.
+// Only allows simple command names or absolute paths, no shell metacharacters.
+func isValidEditor(editor string) bool {
+	// Check for shell metacharacters that could be used for injection
+	dangerous := []string{";", "&", "|", "$", "`", "(", ")", "{", "}", "<", ">", "\n", "\r", "\\"}
+	for _, char := range dangerous {
+		if strings.Contains(editor, char) {
+			return false
+		}
+	}
+	// Must be non-empty and not start with a dash (could be interpreted as a flag)
+	if editor == "" || strings.HasPrefix(editor, "-") {
+		return false
+	}
+	return true
+}
+
 func OpenInEditor(path, repoName string) error {
 	nvimAddr := os.Getenv("NVIM")
 	if nvimAddr != "" {
@@ -56,6 +76,10 @@ func OpenInEditor(path, repoName string) error {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		return ErrNoEditor
+	}
+
+	if !isValidEditor(editor) {
+		return ErrInvalidEditor
 	}
 
 	cmd := exec.Command(editor, path)
@@ -68,8 +92,37 @@ func OpenInEditor(path, repoName string) error {
 	return cmd.Run()
 }
 
+// escapeLuaString escapes a string for safe use in a Lua string literal.
+// This prevents injection attacks when interpolating paths into Lua code.
+func escapeLuaString(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString("\\\\")
+		case '"':
+			b.WriteString("\\\"")
+		case '\'':
+			b.WriteString("\\'")
+		case '\n':
+			b.WriteString("\\n")
+		case '\r':
+			b.WriteString("\\r")
+		case '\t':
+			b.WriteString("\\t")
+		case '\x00':
+			b.WriteString("\\0")
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func openInNeovim(path, repoName, nvimAddr string) error {
-	nvimCmd := fmt.Sprintf("<C-\\><C-n>:lua package.loaded['fuzzyrepo']=nil; require('fuzzyrepo').open_repo(%q)<CR>", path)
+	// Escape the path for safe use in Lua string
+	safePath := escapeLuaString(path)
+	nvimCmd := fmt.Sprintf("<C-\\><C-n>:lua package.loaded['fuzzyrepo']=nil; require('fuzzyrepo').open_repo(\"%s\")<CR>", safePath)
 	cmd := exec.Command("nvim", "--server", nvimAddr, "--remote-send", nvimCmd)
 	return cmd.Run()
 }

@@ -403,11 +403,11 @@ type Config struct {
 
 ---
 
-### Phase 9: Regex Clone Rules (Deferred)
+### Phase 9: Regex Clone Rules
 
-_This phase is deferred until core features are stable._
+_Regex-based clone path determination_
 
-- [ ] **9.1** Add `CloneRules` to Config:
+- [x] **9.1** Add `CloneRules` to Config:
 
 ```go
 type CloneRule struct {
@@ -421,29 +421,36 @@ type Config struct {
 }
 ```
 
-- [ ] **9.2** Add `getClonePath(repo)` function:
+- [x] **9.2** Add `GetClonePath(fullName, repoName)` function:
 
   - Iterate rules in order
-  - Return first matching path
-  - Fall back to default clone_root
+  - Match pattern against full_name (owner/repo)
+  - Return first matching path + repo name
+  - Fall back to default clone_root + repo name
 
-- [ ] **9.3** Document regex rules in README:
+- [x] **9.3** Add validation for clone_rules:
+
+  - Pattern must be valid regex
+  - Path must be absolute
+
+- [x] **9.4** Update config field description to mention clone_rules
+
+**Usage:**
 
 ```yaml
-# Example: Test repos go to ~/repos/test, others to ~/repos
+# Example: Work repos go to ~/work, OSS repos go to ~/oss
 clone_rules:
-  - pattern: "^test-.*"
-    path: /Users/me/repos/test
-  - pattern: ".*"
-    path: /Users/me/repos
+  - pattern: "^my-company/.*"
+    path: /Users/me/work
+  - pattern: "^opensource-org/.*"
+    path: /Users/me/oss
+# Everything else falls back to clone_root
 ```
-
-- [ ] **9.4** Show note in config UI that clone_rules requires manual config file editing
 
 **Test:**
 
-1. Add clone rule for `test-*` repos
-2. Clone a `test-foo` repo - should go to specified path
+1. Add clone rule for `my-org/*` repos
+2. Clone a `my-org/foo` repo - should go to specified path
 3. Clone a normal repo - should go to default path
 
 ---

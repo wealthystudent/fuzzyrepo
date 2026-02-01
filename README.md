@@ -8,8 +8,11 @@ A fast TUI for fuzzy searching GitHub (remote) + local repositories, with clone/
 - Command palette (`Space`) for actions - keeps search uninterrupted
 - Marks whether a repo already exists locally
 - `Enter` opens the repo (clones first if needed)
-- Progressive loading: cached repos appear instantly, GitHub repos stream in batches
+- **Background sync**: Repository data syncs in background, survives tool exit
+- **Instant startup**: Cached repos appear immediately, sync happens in background
 - Frecency-based ranking: frequently/recently used repos appear first
+- **Repository filters**: Show/hide repos by type (owner, collaborator, org member, local-only)
+- **Regex clone rules**: Route repos to different directories based on pattern matching
 - Neovim integration via a lightweight floating-terminal plugin
 
 ## Installation
@@ -28,6 +31,8 @@ gh auth login
 ```
 
 `fuzzyrepo` uses `gh auth token` under the hood.
+
+On first run, fuzzyrepo will check for these dependencies and show helpful error messages if anything is missing.
 
 ## Configuration
 
@@ -49,15 +54,47 @@ clone_root: /abs/path/to/clone/root  # defaults to first repo_roots entry; else 
 github:
   affiliation: owner,collaborator,organization_member
   orgs: my-org,another-org  # optional filter (comma-separated)
+
+# Repository filters (all default to true)
+show_owner: true        # Show repos you own
+show_collaborator: true # Show repos where you're a collaborator
+show_org_member: true   # Show organization repos
+show_local: true        # Show local-only repos (not on GitHub)
+
+# Regex clone rules (optional) - see Clone Rules section
+clone_rules:
+  - pattern: "^my-company/.*"
+    path: /Users/me/work
 ```
 
 Notes:
 
-- first-time usage usually require some load time based on the amount of repos you have access to. 
+- First-time usage will trigger a background sync - repos will appear as they're fetched.
 - `repo_roots` is a YAML list of absolute paths.
 - `clone_root` must be an absolute path.
-- Clone destination is `<clone_root>/<owner>/<repo>`.
+- Clone destination is `<clone_root>/<owner>/<repo>` (unless overridden by clone rules).
 - Alias proposal: `frp`
+
+### Clone Rules
+
+Clone rules let you route repositories to different directories based on regex patterns. Rules are evaluated in order; the first match wins.
+
+```yaml
+clone_rules:
+  - pattern: "^work-org/.*"      # Matches work-org/any-repo
+    path: /Users/me/work
+  - pattern: "^opensource/.*"    # Matches opensource/any-repo
+    path: /Users/me/oss
+  - pattern: ".*-config$"        # Matches any repo ending in -config
+    path: /Users/me/dotfiles
+```
+
+- `pattern`: Regex matched against the full repo name (`owner/repo`)
+- `path`: Absolute path to clone into (repo name is appended)
+
+If no rule matches, the default `clone_root` is used.
+
+**Tip**: Press `e` in the config overlay to open the config file directly in `$EDITOR` for editing clone rules.
 
 ## Usage
 
@@ -89,6 +126,22 @@ Press `Space` to open the command palette, then use arrows to navigate or press 
 | r | Refresh |
 | c | Config |
 | q | Quit |
+
+### Config Overlay
+
+Press `Space` then `c` to open the config overlay. Each field shows a helpful description when focused.
+
+Press `e` in the config overlay to open the config file in your `$EDITOR` - useful for editing clone rules or other advanced settings.
+
+## Background Sync
+
+fuzzyrepo syncs repository data intelligently:
+
+- **Remote sync** (GitHub API): Runs weekly in a detached background process
+- **Local scan** (filesystem): Runs daily, inline (fast)
+- Cache file is watched - UI updates automatically when sync completes
+
+The sync process continues even if you exit fuzzyrepo. A lock file prevents concurrent syncs.
 
 ## Neovim plugin
 
@@ -185,3 +238,7 @@ end
 ## Clipboard (OSC52)
 
 `y` copies using OSC52 escape sequences. Your terminal (and tmux, if used) must allow OSC52 clipboard passthrough.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.

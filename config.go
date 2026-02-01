@@ -148,7 +148,7 @@ func SaveConfig(cfg Config) error {
 	}
 
 	tmpPath := configPath + ".tmp"
-	if err := os.WriteFile(tmpPath, b, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, b, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmpPath, configPath)

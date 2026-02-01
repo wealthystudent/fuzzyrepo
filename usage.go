@@ -53,7 +53,7 @@ func SaveUsage(usage UsageData) error {
 	}
 
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, b, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, b, 0o600); err != nil {
 		return err
 	}
 

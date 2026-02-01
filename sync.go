@@ -61,21 +61,40 @@ func isProcessRunning(pid int) bool {
 	return true
 }
 
-// acquireSyncLock creates a lock file with the current PID
-// Returns true if lock was acquired, false if sync is already running
+// acquireSyncLock creates a lock file with the current PID using atomic operations.
+// Returns true if lock was acquired, false if sync is already running.
+// Uses O_CREATE|O_EXCL for atomic lock creation to prevent race conditions.
 func acquireSyncLock() bool {
-	if isSyncRunning() {
-		return false
-	}
-
 	lockPath := getSyncLockPath()
 	dir := filepath.Dir(lockPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false
 	}
 
+	// First, check if there's an existing lock with a live process
+	if data, err := os.ReadFile(lockPath); err == nil {
+		if pid, err := strconv.Atoi(string(data)); err == nil {
+			if isProcessRunning(pid) {
+				return false // Another sync is running
+			}
+		}
+		// Stale lock file, remove it
+		_ = os.Remove(lockPath)
+	}
+
+	// Try to create lock file atomically with O_CREATE|O_EXCL
+	// This ensures only one process can create the file
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		// Lock file was created by another process between our check and create
+		return false
+	}
+	defer f.Close()
+
 	pid := os.Getpid()
-	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+	if _, err := f.WriteString(strconv.Itoa(pid)); err != nil {
+		// Failed to write PID, clean up and return false
+		_ = os.Remove(lockPath)
 		return false
 	}
 
@@ -142,7 +161,7 @@ func runRemoteSync() {
 	}
 
 	tmpPath := cachePath + ".tmp"
-	if err := os.WriteFile(tmpPath, b, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, b, 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to write cache:", err)
 		os.Exit(1)
 	}
@@ -238,7 +257,7 @@ func saveReposToCache(repos []Repository) error {
 	}
 
 	tmpPath := cachePath + ".tmp"
-	if err := os.WriteFile(tmpPath, b, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, b, 0o600); err != nil {
 		return err
 	}
 

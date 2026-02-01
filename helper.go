@@ -80,7 +80,7 @@ func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg) {
 	b, err := json.MarshalIndent(merged, "", "  ")
 	if err == nil {
 		tmpPath := path + ".tmp"
-		if err := os.WriteFile(tmpPath, b, 0o644); err == nil {
+		if err := os.WriteFile(tmpPath, b, 0o600); err == nil {
 			_ = os.Rename(tmpPath, path)
 		}
 	}
