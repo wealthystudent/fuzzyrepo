@@ -14,82 +14,6 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-var (
-	bgColor       = lipgloss.Color("#0a0a0a")
-	cursorBgColor = lipgloss.Color("#1a1a1a")
-)
-
-var (
-	bgOnlyStyle = lipgloss.NewStyle().
-			Background(bgColor)
-
-	repoNameStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#666666")).
-			Background(bgColor)
-
-	ownerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#444444")).
-			Background(bgColor)
-
-	localYesStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#325555")).
-			Background(bgColor)
-
-	localNoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#913333")).
-			Background(bgColor)
-
-	cursorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffffff")).
-			Background(cursorBgColor)
-
-	cursorSepStyle = lipgloss.NewStyle().
-			Background(cursorBgColor)
-
-	localYesCursorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#325555")).
-				Background(cursorBgColor)
-
-	localNoCursorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#913333")).
-				Background(cursorBgColor)
-
-	headerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("212")).
-			Background(bgColor)
-
-	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#444444")).
-			Background(bgColor)
-
-	keybindStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F9FFAF")).
-			Background(bgColor)
-
-	inputText = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00CECD")).
-			Background(bgColor)
-
-	promptStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#666666")).
-			Background(bgColor)
-
-	queryStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffffff")).
-			Background(bgColor)
-
-	configLabelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#888888")).
-				Background(bgColor)
-
-	overlayStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#333333")).
-			BorderBackground(bgColor).
-			Padding(0, 1).
-			Background(bgColor)
-)
-
 type reposUpdatedMsg []Repository
 type refreshStartedMsg struct{}
 type refreshFinishedMsg struct{}
@@ -666,7 +590,7 @@ func (m Model) viewMain() string {
 
 	searchLeft := promptStyle.Render("> ") + queryStyle.Render(m.query)
 	if m.query == "" {
-		searchLeft += inputText.Render("type to search")
+		searchLeft += inputTextStyle.Render("type to search")
 	}
 
 	hints := keybindStyle.Render("space commands  enter open  ")
@@ -714,7 +638,7 @@ func (m Model) buildCommandBox() string {
 
 	cmds := m.getCommands()
 	var lines []string
-	lines = append(lines, inputText.Render("Commands"))
+	lines = append(lines, inputTextStyle.Render("Commands"))
 
 	for i, cmd := range cmds {
 		if i == m.commandCursor {
@@ -763,7 +687,7 @@ func (m Model) buildConfigBox() string {
 	}
 
 	var lines []string
-	lines = append(lines, inputText.Render("Config"))
+	lines = append(lines, inputTextStyle.Render("Config"))
 	lines = append(lines, "")
 
 	// Main config fields

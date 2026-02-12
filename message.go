@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// MessageLevel indicates the severity/type of a status message
 type MessageLevel int
 
 const (
@@ -16,30 +15,26 @@ const (
 	ErrorLevel
 )
 
-// StatusMessage represents a message to display in the UI
 type StatusMessage struct {
 	Text  string
 	Level MessageLevel
 }
 
-// Colors for message box
 var (
-	infoBgColor = lipgloss.Color("#1a1a1a") // Slightly brighter than main bg (#0a0a0a)
-
 	infoMsgStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#9999CC")). // Muted purple
-			Background(infoBgColor)
+			Foreground(magentaColor).
+			Background(bgColor)
 
 	warningMsgStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFAA00")). // Orange/Yellow
-			Background(infoBgColor)
+			Foreground(yellowColor).
+			Background(bgColor)
 
 	errorMsgStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF5555")). // Red
-			Background(infoBgColor)
+			Foreground(redColor).
+			Background(bgColor)
 
 	infoBoxBgStyle = lipgloss.NewStyle().
-			Background(infoBgColor)
+			Background(bgColor)
 )
 
 // levelPrefix returns the prefix for the message level
