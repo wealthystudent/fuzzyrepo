@@ -59,6 +59,16 @@ func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg) {
 
 	localRepos := indexLocalRepos(config.GetRepoRoots())
 
+	meta, _ := LoadMetadata()
+	remoteRepos, _ := loadRepoCache()
+	if len(remoteRepos) == 0 && meta.RemoteSyncPID != 0 {
+		remoteRepos = nil
+	}
+
+	mergedLocalFirst := mergeRepos(localRepos, remoteRepos)
+	uiMsgs <- localReposUpdatedMsg(mergedLocalFirst)
+	uiMsgs <- localRefreshDoneMsg{}
+
 	githubClient, err := getGithubClient(ctx)
 	if err != nil {
 		uiMsgs <- errorMsg{err: err}
@@ -66,7 +76,7 @@ func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg) {
 		return
 	}
 
-	remoteRepos, err := getRemoteRepositories(ctx, githubClient, config)
+	remoteRepos, err = getRemoteRepositories(ctx, githubClient, config)
 	if err != nil {
 		uiMsgs <- errorMsg{err: err}
 		uiMsgs <- refreshFinishedMsg{}
@@ -86,7 +96,7 @@ func progressiveRefresh(config Config, uiMsgs chan<- tea.Msg) {
 	}
 
 	// Update metadata with sync timestamps
-	meta, _ := LoadMetadata()
+	meta, _ = LoadMetadata()
 	meta.UpdateRemoteSyncTime()
 	meta.UpdateLocalScanTime()
 	_ = SaveMetadata(meta)

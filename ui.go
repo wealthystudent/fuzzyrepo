@@ -15,8 +15,10 @@ import (
 )
 
 type reposUpdatedMsg []Repository
+type localReposUpdatedMsg []Repository
 type refreshStartedMsg struct{}
 type refreshFinishedMsg struct{}
+type localRefreshDoneMsg struct{}
 type errorMsg struct{ err error }
 type cacheCheckTickMsg struct{} // Periodic tick to check cache file changes
 type clearMessageMsg struct{}   // Timer to clear status message
@@ -315,9 +317,23 @@ func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setMessage("refreshing...", InfoLevel)
 		return m, nil
 
+	case localRefreshDoneMsg:
+		m.setMessage("Locals updated. Syncing remotes…", InfoLevel)
+		return m, nil
+
+	case localReposUpdatedMsg:
+		m.cache = []Repository(msg)
+		m.all = filterRepos(m.cache, m.config)
+		m.applySearch()
+
+		if m.cursor >= len(m.results) {
+			m.cursor = max(0, len(m.results)-1)
+		}
+		return m, nil
+
 	case refreshFinishedMsg:
 		m.refreshing = false
-		if m.message.Text == "refreshing..." {
+		if m.message.Text == "refreshing..." || strings.HasPrefix(m.message.Text, "Local refresh done") {
 			m.setMessage("Sync complete", InfoLevel)
 			return m, clearMessageAfter(5 * time.Second)
 		}
@@ -335,10 +351,14 @@ func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.cursor >= len(m.results) {
 			m.cursor = max(0, len(m.results)-1)
 		}
-		m.setMessage(fmt.Sprintf("%d repos loaded", len(m.all)), InfoLevel)
-		// Update our tracked mtime since we just got new data
+		if !m.refreshing {
+			m.setMessage(fmt.Sprintf("%d repos loaded", len(m.all)), InfoLevel)
+			// Update our tracked mtime since we just got new data
+			m.cacheMtime = GetCacheMtime()
+			return m, clearMessageAfter(5 * time.Second)
+		}
 		m.cacheMtime = GetCacheMtime()
-		return m, clearMessageAfter(5 * time.Second)
+		return m, nil
 
 	case tea.KeyMsg:
 		if m.showCommands {
