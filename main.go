@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -77,17 +78,33 @@ func main() {
 		}
 	}()
 
-	selectedRepo, action, updatedConfig := ui(initial, config, uiMsgs, refreshChan, initialMtime, syncSpawned, firstRun)
-	executeAction(selectedRepo, action, updatedConfig)
+	selectedRepo, action, selectedPath, updatedConfig := ui(initial, config, uiMsgs, refreshChan, initialMtime, syncSpawned, firstRun)
+	executeAction(selectedRepo, action, selectedPath, updatedConfig)
 }
 
-func executeAction(repo *Repository, action Action, config Config) {
-	if repo == nil || action == ActionNone {
+func executeAction(repo *Repository, action Action, selectedPath string, config Config) {
+	if action == ActionNone {
 		return
 	}
 
 	switch action {
+	case ActionOpenPath:
+		if strings.TrimSpace(selectedPath) == "" {
+			return
+		}
+		if err := OpenInEditor(selectedPath, "manual"); err != nil {
+			if errors.Is(err, ErrNoEditor) {
+				fmt.Fprintln(os.Stderr, "Error: $EDITOR is not set")
+				os.Exit(1)
+			}
+			fmt.Fprintln(os.Stderr, "Failed to open editor:", err)
+			os.Exit(1)
+		}
+		return
 	case ActionOpen:
+		if repo == nil {
+			return
+		}
 		localPath, err := EnsureLocal(*repo, config)
 		if err != nil && !errors.Is(err, ErrAlreadyExists) {
 			fmt.Fprintln(os.Stderr, "Clone failed:", err)
@@ -106,6 +123,9 @@ func executeAction(repo *Repository, action Action, config Config) {
 		_ = RecordUsage(*repo)
 
 	case ActionCopy:
+		if repo == nil {
+			return
+		}
 		localPath, err := EnsureLocal(*repo, config)
 		if err != nil && !errors.Is(err, ErrAlreadyExists) {
 			fmt.Fprintln(os.Stderr, "Clone failed:", err)
@@ -118,6 +138,9 @@ func executeAction(repo *Repository, action Action, config Config) {
 		_ = RecordUsage(*repo)
 
 	case ActionBrowse:
+		if repo == nil {
+			return
+		}
 		if err := OpenInBrowser(*repo); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to open browser:", err)
 			os.Exit(1)
@@ -126,6 +149,9 @@ func executeAction(repo *Repository, action Action, config Config) {
 		_ = RecordUsage(*repo)
 
 	case ActionPRs:
+		if repo == nil {
+			return
+		}
 		if err := OpenPRs(*repo); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to open PRs:", err)
 			os.Exit(1)

@@ -29,6 +29,7 @@ type Action int
 const (
 	ActionNone Action = iota
 	ActionOpen
+	ActionOpenPath
 	ActionCopy
 	ActionBrowse
 	ActionPRs
@@ -64,12 +65,16 @@ type Model struct {
 	config         Config
 	selectedRepo   *Repository
 	selectedAction Action
+	selectedPath   string
 
 	refreshChan chan<- struct{}
 
 	showConfig  bool
 	configFocus int
 	inputs      []textinput.Model
+
+	showManualPath  bool
+	manualPathInput textinput.Model
 
 	showCommands  bool
 	commandCursor int
@@ -134,6 +139,18 @@ func newModel(cache []Repository, config Config, refreshChan chan<- struct{}, ca
 		ti.Cursor.TextStyle = lipgloss.NewStyle().Background(bgColor)
 		m.inputs[i] = ti
 	}
+
+	manualInput := textinput.New()
+	manualInput.CharLimit = 500
+	manualInput.Width = 50
+	manualInput.Prompt = "> "
+	manualInput.TextStyle = lipgloss.NewStyle().Background(bgColor).Foreground(lipgloss.Color("#ffffff"))
+	manualInput.PlaceholderStyle = lipgloss.NewStyle().Background(bgColor).Foreground(lipgloss.Color("#444444"))
+	manualInput.PromptStyle = promptStyle
+	manualInput.Cursor.Style = lipgloss.NewStyle().Background(bgColor)
+	manualInput.Cursor.TextStyle = lipgloss.NewStyle().Background(bgColor)
+	manualInput.Placeholder = "/path/to/repo"
+	m.manualPathInput = manualInput
 
 	m.inputs[cfgRepoRoots].Placeholder = "/path/to/repos,/another/path"
 	m.inputs[cfgCloneRoot].Placeholder = "/path/to/clone/root"
@@ -219,6 +236,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.showConfig {
 		return m.updateConfig(msg)
+	}
+	if m.showManualPath {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			return m.updateManualPath(key)
+		}
+		return m, nil
 	}
 	return m.updateMain(msg)
 }
@@ -428,6 +451,28 @@ func (m Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) updateManualPath(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.showManualPath = false
+		return m, nil
+
+	case tea.KeyEnter:
+		path := strings.TrimSpace(m.manualPathInput.Value())
+		m.showManualPath = false
+		if path == "" {
+			return m, nil
+		}
+		m.selectedPath = path
+		m.selectedAction = ActionOpenPath
+		return m, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	m.manualPathInput, cmd = m.manualPathInput.Update(msg)
+	return m, cmd
+}
+
 func (m Model) updateCommands(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	cmds := m.getCommands()
 
@@ -559,7 +604,7 @@ func (m Model) viewMain() string {
 		b.WriteString("\n")
 	}
 
-	overlayOpen := m.showCommands || m.showConfig
+	overlayOpen := m.showCommands || m.showConfig || m.showManualPath
 
 	if total == 0 {
 		b.WriteString(padLineToWidth(dimStyle.Render("no matches"), width, bgOnlyStyle))
@@ -630,6 +675,9 @@ func (m Model) viewMain() string {
 		configContent := m.buildConfigBox()
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, configContent, lipgloss.WithWhitespaceBackground(bgColor))
 	}
+	if m.showManualPath {
+		return m.overlayCenter(mainRendered, m.buildManualPathBox())
+	}
 	if m.showCommands {
 		return m.overlayCenter(mainRendered, m.buildCommandBox())
 	}
@@ -672,6 +720,18 @@ func (m Model) buildCommandBox() string {
 
 	lines = append(lines, "")
 	lines = append(lines, keybindStyle.Render("↑↓ navigate  enter select  esc close"))
+
+	return overlayStyle.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) buildManualPathBox() string {
+	lines := []string{
+		inputTextStyle.Render("Enter path"),
+		"",
+		m.manualPathInput.View(),
+		"",
+		keybindStyle.Render("enter open   esc cancel"),
+	}
 
 	return overlayStyle.Render(strings.Join(lines, "\n"))
 }
@@ -842,6 +902,12 @@ func (m *Model) applySearch() {
 	m.cursor = max(0, len(m.results)-1)
 }
 
+func (m *Model) openManualPathPrompt() {
+	m.showManualPath = true
+	m.manualPathInput.SetValue("")
+	m.manualPathInput.Focus()
+}
+
 func (m *Model) loadConfigIntoInputs() {
 	m.inputs[cfgRepoRoots].SetValue(strings.Join(m.config.RepoRoots, ", "))
 	m.inputs[cfgCloneRoot].SetValue(m.config.CloneRoot)
@@ -939,7 +1005,9 @@ func stringSlicesEqual(a, b []string) bool {
 
 func (m *Model) getCommands() []command {
 	return []command{
-		{key: "o", name: "open in editor", action: ActionOpen},
+		{key: "o", name: "enter path", fn: func(m *Model) {
+			m.openManualPathPrompt()
+		}},
 		{key: "y", name: "copy path", action: ActionCopy},
 		{key: "b", name: "open in browser", action: ActionBrowse},
 		{key: "p", name: "open pull requests", action: ActionPRs},
@@ -966,7 +1034,7 @@ func (m *Model) getCommands() []command {
 	}
 }
 
-func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}, cacheMtime time.Time, syncInProgress bool, firstRun bool) (*Repository, Action, Config) {
+func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan chan<- struct{}, cacheMtime time.Time, syncInProgress bool, firstRun bool) (*Repository, Action, string, Config) {
 	model := newModel(initial, config, refreshChan, cacheMtime, firstRun)
 
 	// Set initial status if background sync was spawned
@@ -1002,5 +1070,5 @@ func ui(initial []Repository, config Config, uiMsgs <-chan tea.Msg, refreshChan 
 	}
 
 	m := finalModel.(Model)
-	return m.selectedRepo, m.selectedAction, m.config
+	return m.selectedRepo, m.selectedAction, m.selectedPath, m.config
 }

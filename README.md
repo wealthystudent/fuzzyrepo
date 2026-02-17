@@ -119,7 +119,7 @@ Press `Space` to open the command palette, then use arrows to navigate or press 
 
 | Key | Command |
 | --- | --- |
-| o | Open in editor |
+| o | Enter path |
 | y | Copy local path |
 | b | Open in browser |
 | p | Open pull requests |
